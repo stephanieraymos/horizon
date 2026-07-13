@@ -14,6 +14,7 @@ final class TripDetailStore {
     var expenses: [Expense] = []
     var splits: [ExpenseSplit] = []
     var documents: [TripDocument] = []
+    var purchases: [TripPurchase] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -32,6 +33,56 @@ final class TripDetailStore {
         expenses = await exp
         splits = await fetchSplits(for: expenses.map(\.id))
         documents = await fetchDocuments()
+        purchases = await fetchPurchases()
+    }
+
+    // MARK: Purchases (shopping list)
+
+    private func fetchPurchases() async -> [TripPurchase] {
+        do {
+            return try await supabase.from("fam_trip_purchases")
+                .select().eq("trip_id", value: tripID).order("name").execute().value
+        } catch { return [] }
+    }
+
+    func savePurchase(_ p: TripPurchase) async {
+        do {
+            try await supabase.from("fam_trip_purchases").upsert(p).execute()
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Optimistic status cycle (To buy → In cart → Purchased → …).
+    func cyclePurchase(_ p: TripPurchase) async {
+        var updated = p
+        updated.status = p.status.next
+        if let idx = purchases.firstIndex(where: { $0.id == p.id }) { purchases[idx] = updated }
+        do {
+            try await supabase.from("fam_trip_purchases")
+                .update(["status": updated.status.rawValue]).eq("id", value: p.id).execute()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deletePurchase(_ p: TripPurchase) async {
+        do {
+            try await supabase.from("fam_trip_purchases").delete().eq("id", value: p.id).execute()
+            purchases.removeAll { $0.id == p.id }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    var purchasesByTag: [(tag: String, items: [TripPurchase])] {
+        Dictionary(grouping: purchases, by: { $0.tag?.nilIfBlank ?? "Other" })
+            .map { (tag: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
+            .sorted { $0.tag < $1.tag }
+    }
+
+    var purchaseTags: [String] {
+        Array(Set(purchases.compactMap { $0.tag?.nilIfBlank })).sorted()
+    }
+
+    var purchasesToBuy: Int { purchases.filter { $0.status != .purchased }.count }
+    var purchasesSpent: Double {
+        purchases.filter { $0.status == .purchased }.compactMap(\.amountDollars).reduce(0, +)
     }
 
     private func fetchReservations() async -> [Reservation] {

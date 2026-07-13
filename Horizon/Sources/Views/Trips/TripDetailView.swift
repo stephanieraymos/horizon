@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct TripDetailView: View {
     let trip: Trip
@@ -11,6 +12,7 @@ struct TripDetailView: View {
     @State private var confirmDelete = false
     @State private var editingReservation: Reservation?
     @State private var editingDay: ItineraryDay?
+    @State private var coverItem: PhotosPickerItem?
 
     init(trip: Trip) {
         self.trip = trip
@@ -23,6 +25,7 @@ struct TripDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                coverBanner
                 header
                 travelersStrip
                 overview
@@ -77,6 +80,31 @@ struct TripDetailView: View {
     }
 
     // MARK: Header + overview
+
+    private var coverBanner: some View {
+        PhotosPicker(selection: $coverItem, matching: .images) {
+            CoverImage(cover: current.coverPhotoURL) {
+                ZStack {
+                    LinearGradient(colors: [Theme.Colors.brand.opacity(0.35), Theme.Colors.brand.opacity(0.15)],
+                                   startPoint: .top, endPoint: .bottom)
+                    Label("Add cover photo", systemImage: "photo.badge.plus").foregroundStyle(.white)
+                }
+            }
+            .frame(height: 170)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .onChange(of: coverItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    await trips.setTripCover(tripID: current.id, familyID: current.familyID, imageData: data)
+                }
+                coverItem = nil
+            }
+        }
+    }
 
     private var header: some View {
         VStack(spacing: 8) {

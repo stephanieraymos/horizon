@@ -59,6 +59,11 @@ struct TripRow: View {
             TripDetailView(trip: trip)
         } label: {
             HStack(spacing: 12) {
+                if trip.coverPhotoURL?.nilIfBlank != nil {
+                    CoverImage(cover: trip.coverPhotoURL) { Color.secondary.opacity(0.12) }
+                        .frame(width: 46, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(trip.name).font(.headline)
                     if let subtitle = subtitle {

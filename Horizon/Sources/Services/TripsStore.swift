@@ -160,6 +160,27 @@ final class TripsStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Uploads a cover photo and links it to the trip (stores the storage path).
+    func setTripCover(tripID: UUID, familyID: UUID, imageData: Data) async {
+        let path = "\(familyID.uuidString)/covers/trip-\(tripID.uuidString).jpg"
+        struct P: Encodable { let cover_photo_url: String }
+        do {
+            try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")
+            try await supabase.from("fam_trips").update(P(cover_photo_url: path)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverPhotoURL = path }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func setDestinationCover(id: UUID, familyID: UUID, imageData: Data) async {
+        let path = "\(familyID.uuidString)/covers/dest-\(id.uuidString).jpg"
+        struct P: Encodable { let cover_photo_url: String }
+        do {
+            try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")
+            try await supabase.from("fam_destinations").update(P(cover_photo_url: path)).eq("id", value: id).execute()
+            if let i = destinations.firstIndex(where: { $0.id == id }) { destinations[i].coverPhotoURL = path }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func delete(_ trip: Trip) async {
         do {
             try await supabase.from("fam_trips").delete().eq("id", value: trip.id).execute()

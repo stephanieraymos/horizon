@@ -7,6 +7,12 @@ struct HorizonApp: App {
     @State private var trips = TripsStore()
     @State private var travelNotes = TravelNotesStore()
 
+    init() {
+        // Give the shared image disk cache real capacity so photos are fetched
+        // once and never re-egress on re-render/scroll (the egress-runaway fix).
+        HorizonImageLoader.configureSharedCache()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

@@ -42,6 +42,17 @@ struct TripDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Edit trip", systemImage: "pencil") { showEdit = true }
+                    if current.isUpcoming, current.departDate != nil, TripLiveActivityManager.isSupported {
+                        if TripLiveActivityManager.isRunning(tripName: current.name) {
+                            Button("Stop Live Activity", systemImage: "stop.circle") {
+                                TripLiveActivityManager.stop(tripName: current.name)
+                            }
+                        } else {
+                            Button("Track countdown", systemImage: "timer") {
+                                TripLiveActivityManager.start(trip: current)
+                            }
+                        }
+                    }
                     Button("Delete trip", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 } label: { Image(systemName: "ellipsis.circle") }
             }

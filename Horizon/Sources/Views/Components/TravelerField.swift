@@ -14,6 +14,10 @@ struct TravelerField: View {
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
 
+    private func avatarURL(for name: String) -> String? {
+        members.first { $0.name == name }?.avatarURL
+    }
+
     private var suggestions: [FamilyMember] {
         guard focused else { return [] }
         let q = trimmed.lowercased()
@@ -35,6 +39,7 @@ struct TravelerField: View {
                 HStack(spacing: 6) {
                     ForEach(selected, id: \.self) { name in
                         HStack(spacing: 4) {
+                            PersonAvatar(name: name, avatarURL: avatarURL(for: name), size: 20)
                             Text(name).font(.subheadline)
                             Button { selected.removeAll { $0 == name } } label: {
                                 Image(systemName: "xmark.circle.fill").font(.caption)
@@ -57,7 +62,7 @@ struct TravelerField: View {
                 selected.append(member.name); query = ""
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "person.circle").foregroundStyle(.secondary).frame(width: 20)
+                    PersonAvatar(name: member.name, avatarURL: member.avatarURL, size: 22)
                     Text(member.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                     Spacer()
                     Image(systemName: "plus").font(.caption2).foregroundStyle(.tertiary)

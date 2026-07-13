@@ -3,6 +3,7 @@ import SwiftUI
 struct TripDetailView: View {
     let trip: Trip
     @Environment(TripsStore.self) private var trips
+    @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
 
     @State private var detail: TripDetailStore
@@ -23,6 +24,7 @@ struct TripDetailView: View {
         ScrollView {
             VStack(spacing: 20) {
                 header
+                travelersStrip
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
                 if current.isSomeday { somedayCallout }
@@ -92,13 +94,28 @@ struct TripDetailView: View {
         .padding(.vertical, 12)
     }
 
+    @ViewBuilder
+    private var travelersStrip: some View {
+        if let travelers = current.travelers, !travelers.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(travelers, id: \.self) { name in
+                        VStack(spacing: 4) {
+                            PersonAvatar(name: name, avatarURL: family.members.first { $0.name == name }?.avatarURL, size: 44)
+                            Text(name.split(separator: " ").first.map(String.init) ?? name)
+                                .font(.caption).lineLimit(1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
     private var overview: some View {
         VStack(spacing: 0) {
             if let dest = destinationName { row("Destination", dest, "mappin.and.ellipse") }
             row("Status", current.status.label, current.status.systemImage)
-            if let travelers = current.travelers, !travelers.isEmpty {
-                row("Travelers", travelers.joined(separator: ", "), "person.2")
-            }
             if let transport = current.transportation?.nilIfBlank { row("Transportation", transport, "car") }
             if let budget = TripFormat.money(current.budget) { row("Budget", budget, "dollarsign.circle") }
         }

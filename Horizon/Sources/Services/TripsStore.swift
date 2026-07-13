@@ -11,6 +11,7 @@ final class TripsStore {
     var trips: [Trip] = []
     var destinations: [Destination] = []
     var places: [Place] = []
+    var packingCategories: [PackingCategoryItem] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -42,7 +43,43 @@ final class TripsStore {
         do {
             places = try await supabase.from("fam_places").select().order("name").execute().value
         } catch { /* non-fatal */ }
+        do {
+            packingCategories = try await supabase.from("fam_packing_categories")
+                .select().order("sort").execute().value
+        } catch { /* non-fatal */ }
         publishWidgetSnapshot()
+    }
+
+    func icon(forCategory name: String?) -> String {
+        guard let name else { return "shippingbox" }
+        return packingCategories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.icon ?? "shippingbox"
+    }
+
+    @discardableResult
+    func createPackingCategory(familyID: UUID, name: String, icon: String) async -> PackingCategoryItem? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let existing = packingCategories.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        do {
+            let row: PackingCategoryItem = try await supabase.from("fam_packing_categories")
+                .insert(PackingCategoryItem(familyID: familyID, name: trimmed, icon: icon,
+                                            sort: packingCategories.count))
+                .select().single().execute().value
+            packingCategories.append(row)
+            return row
+        } catch { return nil }
+    }
+
+    func updatePackingCategoryIcon(_ category: PackingCategoryItem, icon: String) async {
+        do {
+            try await supabase.from("fam_packing_categories")
+                .update(["icon": icon]).eq("id", value: category.id).execute()
+            if let i = packingCategories.firstIndex(where: { $0.id == category.id }) {
+                packingCategories[i].icon = icon
+            }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     /// Inserts a place and returns it (for inline "add new" in location pickers).

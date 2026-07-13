@@ -1,27 +1,35 @@
 import Foundation
 
-enum PackingCategory: String, Codable, CaseIterable, Hashable {
-    case clothes, bathroom, tech, documents, snacks, kids, gear, other
+/// A packing category with an editable icon (mirror of `fam_packing_categories`).
+struct PackingCategoryItem: Codable, Identifiable, Hashable {
+    let id: UUID
+    var familyID: UUID
+    var name: String
+    var icon: String
+    var sort: Int
 
-    var label: String {
-        switch self {
-        case .clothes: "Clothes"; case .bathroom: "Bathroom"; case .tech: "Tech"
-        case .documents: "Documents"; case .snacks: "Snacks"; case .kids: "Kids"
-        case .gear: "Gear"; case .other: "Other"
-        }
+    enum CodingKeys: String, CodingKey {
+        case id
+        case familyID = "family_id"
+        case name, icon, sort
     }
 
-    var systemImage: String {
-        switch self {
-        case .clothes: "tshirt"; case .bathroom: "shower"; case .tech: "laptopcomputer"
-        case .documents: "doc.text"; case .snacks: "takeoutbag.and.cup.and.straw"
-        case .kids: "figure.and.child.holdinghands"; case .gear: "backpack"; case .other: "shippingbox"
-        }
+    init(id: UUID = UUID(), familyID: UUID, name: String, icon: String = "shippingbox", sort: Int = 0) {
+        self.id = id; self.familyID = familyID; self.name = name; self.icon = icon; self.sort = sort
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        familyID = try c.decode(UUID.self, forKey: .familyID)
+        name = try c.decode(String.self, forKey: .name)
+        icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? "shippingbox"
+        sort = try c.decodeIfPresent(Int.self, forKey: .sort) ?? 0
     }
 }
 
-/// Mirror of `fam_trip_packing`. `memberID` is required (matches Glade);
-/// `category` is the additive Phase-3 column (Glade ignores it).
+/// Mirror of `fam_trip_packing`. `memberID` is required; `category` is free text
+/// (matched against fam_packing_categories for its icon).
 struct PackingItem: Codable, Identifiable, Hashable {
     let id: UUID
     var tripID: UUID
@@ -29,7 +37,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
     var item: String
     var checked: Bool
     var autoSuggested: Bool
-    var category: PackingCategory?
+    var category: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -41,7 +49,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
     }
 
     init(id: UUID = UUID(), tripID: UUID, memberID: UUID, item: String,
-         checked: Bool = false, autoSuggested: Bool = false, category: PackingCategory? = nil) {
+         checked: Bool = false, autoSuggested: Bool = false, category: String? = nil) {
         self.id = id; self.tripID = tripID; self.memberID = memberID
         self.item = item; self.checked = checked
         self.autoSuggested = autoSuggested; self.category = category
@@ -55,7 +63,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
         item = try c.decode(String.self, forKey: .item)
         checked = try c.decodeIfPresent(Bool.self, forKey: .checked) ?? false
         autoSuggested = try c.decodeIfPresent(Bool.self, forKey: .autoSuggested) ?? false
-        category = try c.decodeIfPresent(PackingCategory.self, forKey: .category)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
     }
 
     func encode(to encoder: Encoder) throws {

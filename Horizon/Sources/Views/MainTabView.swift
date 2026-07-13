@@ -1,27 +1,18 @@
 import SwiftUI
 
-/// Phase-0 shell. Real Trips / Someday / Notes screens land in later phases.
 struct MainTabView: View {
     var body: some View {
         TabView {
-            PlaceholderTab(
-                title: "Trips",
-                systemImage: "airplane",
-                message: "Upcoming and past trips will live here."
-            )
-            .tabItem { Label("Trips", systemImage: "airplane") }
+            TripsListView()
+                .tabItem { Label("Trips", systemImage: "airplane") }
 
-            PlaceholderTab(
-                title: "Someday",
-                systemImage: "map",
-                message: "Bucket-list destinations and someday plans."
-            )
-            .tabItem { Label("Someday", systemImage: "map") }
+            SomedayView()
+                .tabItem { Label("Someday", systemImage: "map") }
 
             PlaceholderTab(
                 title: "Notes",
                 systemImage: "note.text",
-                message: "Travel knowledge and trip notes."
+                message: "Travel knowledge and trip notes land in a later phase."
             )
             .tabItem { Label("Notes", systemImage: "note.text") }
 
@@ -31,7 +22,7 @@ struct MainTabView: View {
     }
 }
 
-private struct PlaceholderTab: View {
+struct PlaceholderTab: View {
     let title: String
     let systemImage: String
     let message: String
@@ -50,12 +41,16 @@ private struct PlaceholderTab: View {
 
 private struct SettingsTab: View {
     @Environment(AuthStore.self) private var authStore
+    @Environment(FamilyStore.self) private var family
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Account") {
                     LabeledContent("Signed in as", value: authStore.userEmail ?? "—")
+                    if let member = family.currentMember {
+                        LabeledContent("Member", value: member.name)
+                    }
                     Button("Sign Out", role: .destructive) {
                         Task { await authStore.signOut() }
                     }

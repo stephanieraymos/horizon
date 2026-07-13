@@ -89,14 +89,15 @@ while true; do
 done
 
 echo "▶  Exporting IPA..."
+# NOTE: export intentionally does NOT pass the ASC API key. Cloud-managed
+# *distribution* signing isn't permitted for this key ("Cloud signing permission
+# error"), but Xcode's logged-in account can create the App Store profile. So
+# export relies on the local account + Apple Distribution cert in the Keychain.
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
   -exportOptionsPlist ExportOptions.plist \
   -allowProvisioningUpdates \
-  -authenticationKeyPath "$HOME/.private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-  -authenticationKeyID "$ASC_KEY_ID" \
-  -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
   -quiet
 
 IPA=$(find "$EXPORT_PATH" -name '*.ipa' | head -1)

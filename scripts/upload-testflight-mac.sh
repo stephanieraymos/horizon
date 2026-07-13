@@ -61,14 +61,13 @@ xcodebuild archive \
   -quiet
 
 echo "▶  Exporting .pkg..."
+# See the iOS script: export relies on Xcode's logged-in account for
+# distribution signing (the ASC API key can't do cloud-managed distribution).
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
   -exportOptionsPlist ExportOptions-mac.plist \
   -allowProvisioningUpdates \
-  -authenticationKeyPath "$HOME/.private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-  -authenticationKeyID "$ASC_KEY_ID" \
-  -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
   -quiet
 
 PKG=$(find "$EXPORT_PATH" -name '*.pkg' | head -1)

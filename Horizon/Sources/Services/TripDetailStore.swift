@@ -10,6 +10,9 @@ final class TripDetailStore {
     let tripID: UUID
     var reservations: [Reservation] = []
     var itinerary: [ItineraryDay] = []
+    var packing: [PackingItem] = []
+    var expenses: [Expense] = []
+    var splits: [ExpenseSplit] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -20,8 +23,13 @@ final class TripDetailStore {
         defer { isLoading = false }
         async let res = fetchReservations()
         async let days = fetchItinerary()
+        async let pack = fetchPacking()
+        async let exp = fetchExpenses()
         reservations = await res
         itinerary = await days
+        packing = await pack
+        expenses = await exp
+        splits = await fetchSplits(for: expenses.map(\.id))
     }
 
     private func fetchReservations() async -> [Reservation] {
@@ -83,5 +91,93 @@ final class TripDetailStore {
             try await supabase.from("fam_trip_itinerary").delete().eq("id", value: day.id).execute()
             itinerary.removeAll { $0.id == day.id }
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: Packing
+
+    private func fetchPacking() async -> [PackingItem] {
+        do {
+            return try await supabase.from("fam_trip_packing")
+                .select().eq("trip_id", value: tripID).order("item").execute().value
+        } catch { return [] }
+    }
+
+    func savePacking(_ item: PackingItem) async {
+        do {
+            try await supabase.from("fam_trip_packing").upsert(item).execute()
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Optimistic check toggle — flips locally, then persists.
+    func togglePacking(_ item: PackingItem) async {
+        var updated = item
+        updated.checked.toggle()
+        if let idx = packing.firstIndex(where: { $0.id == item.id }) { packing[idx] = updated }
+        do {
+            try await supabase.from("fam_trip_packing")
+                .update(["checked": updated.checked]).eq("id", value: item.id).execute()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deletePacking(_ item: PackingItem) async {
+        do {
+            try await supabase.from("fam_trip_packing").delete().eq("id", value: item.id).execute()
+            packing.removeAll { $0.id == item.id }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: Expenses + splits
+
+    private func fetchExpenses() async -> [Expense] {
+        do {
+            return try await supabase.from("fam_trip_expenses")
+                .select().eq("trip_id", value: tripID).order("logged_at", ascending: false).execute().value
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
+    private func fetchSplits(for expenseIDs: [UUID]) async -> [ExpenseSplit] {
+        guard !expenseIDs.isEmpty else { return [] }
+        do {
+            return try await supabase.from("fam_expense_splits")
+                .select().in("expense_id", values: expenseIDs.map(\.uuidString)).execute().value
+        } catch { return [] }
+    }
+
+    /// Saves an expense and replaces its splits atomically enough for a family app
+    /// (upsert expense, delete old splits, insert new ones), then reloads.
+    func saveExpense(_ expense: Expense, splits newSplits: [ExpenseSplit]) async {
+        do {
+            try await supabase.from("fam_trip_expenses").upsert(expense).execute()
+            try await supabase.from("fam_expense_splits").delete().eq("expense_id", value: expense.id).execute()
+            if !newSplits.isEmpty {
+                try await supabase.from("fam_expense_splits").insert(newSplits).execute()
+            }
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deleteExpense(_ expense: Expense) async {
+        do {
+            try await supabase.from("fam_trip_expenses").delete().eq("id", value: expense.id).execute()
+            expenses.removeAll { $0.id == expense.id }
+            splits.removeAll { $0.expenseID == expense.id }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func splits(for expense: Expense) -> [ExpenseSplit] {
+        splits.filter { $0.expenseID == expense.id }
+    }
+
+    var tripTotal: Double { expenses.reduce(0) { $0 + $1.amount } }
+
+    /// Per-member owed totals across all splits.
+    var perMemberTotals: [(memberID: UUID, amount: Double)] {
+        Dictionary(grouping: splits, by: \.memberID)
+            .map { (memberID: $0.key, amount: $0.value.reduce(0) { $0 + $1.amount }) }
+            .sorted { $0.amount > $1.amount }
     }
 }

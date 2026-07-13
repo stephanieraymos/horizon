@@ -28,6 +28,8 @@ struct TripDetailView: View {
                 if current.isSomeday { somedayCallout }
                 reservationsSection
                 itinerarySection
+                TripPackingSection(store: detail)
+                TripExpensesSection(store: detail, trip: current)
             }
             .padding()
         }

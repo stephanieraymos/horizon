@@ -112,6 +112,29 @@ final class TripsStore {
         }
     }
 
+    /// Inserts a destination and returns it (for inline "add new" in pickers).
+    /// Reuses an existing same-named destination if present.
+    @discardableResult
+    func createDestination(familyID: UUID, name: String) async -> Destination? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let existing = destinations.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        do {
+            let row: Destination = try await supabase
+                .from("fam_destinations")
+                .insert(Destination(familyID: familyID, name: trimmed))
+                .select().single().execute().value
+            destinations.append(row)
+            destinations.sort { $0.name < $1.name }
+            return row
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func saveDestination(_ destination: Destination) async {
         do {
             try await supabase.from("fam_destinations").upsert(destination).execute()

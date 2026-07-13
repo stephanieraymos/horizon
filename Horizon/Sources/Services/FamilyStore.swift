@@ -47,4 +47,27 @@ final class FamilyStore {
     func memberName(id: UUID) -> String? {
         members.first { $0.id == id }?.name
     }
+
+    /// Creates a lightweight person (role=none) so they're reusable on future
+    /// trips. Returns the created member, or an existing one with the same name.
+    @discardableResult
+    func createMember(name: String) async -> FamilyMember? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let familyID else { return nil }
+        if let existing = members.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        struct NewMember: Encodable { let family_id: String; let name: String; let role: String }
+        do {
+            let row: FamilyMember = try await supabase
+                .from("fam_family_members")
+                .insert(NewMember(family_id: familyID.uuidString, name: trimmed, role: "none"))
+                .select().single().execute().value
+            members.append(row)
+            members.sort { $0.name < $1.name }
+            return row
+        } catch {
+            return nil
+        }
+    }
 }

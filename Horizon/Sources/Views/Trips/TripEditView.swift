@@ -12,7 +12,8 @@ struct TripEditView: View {
     @State private var departDate: Date
     @State private var returnDate: Date
     @State private var budgetText: String
-    @State private var travelers: Set<String>
+    @State private var destText: String
+    @State private var travelers: [String]
     private let isNew: Bool
 
     init(trip: Trip) {
@@ -22,7 +23,8 @@ struct TripEditView: View {
         _departDate = State(initialValue: depart ?? Date())
         _returnDate = State(initialValue: trip.returnDate ?? depart ?? Date())
         _budgetText = State(initialValue: trip.budget.map { String(Int($0)) } ?? "")
-        _travelers = State(initialValue: Set(trip.travelers ?? []))
+        _destText = State(initialValue: trip.destination ?? "")
+        _travelers = State(initialValue: trip.travelers ?? [])
         isNew = trip.createdAt == nil && trip.name.isEmpty
     }
 
@@ -31,10 +33,26 @@ struct TripEditView: View {
             Form {
                 Section {
                     TextField("Trip name", text: $draft.name)
-                    TextField("Destination", text: Binding(
-                        get: { draft.destination ?? "" },
-                        set: { draft.destination = $0.nilIfBlank }
-                    ))
+                }
+
+                Section {
+                    ComboField(
+                        placeholder: "Search or add a destination",
+                        text: $destText,
+                        options: destinationOptions,
+                        pickIcon: "mappin.and.ellipse",
+                        onPick: { opt in draft.destinationID = UUID(uuidString: opt.id) },
+                        onAdd: { name in
+                            Task {
+                                if let d = await trips.createDestination(familyID: draft.familyID, name: name) {
+                                    draft.destinationID = d.id
+                                }
+                            }
+                        })
+                } header: {
+                    Text("Destination")
+                } footer: {
+                    Text("Trips sharing a destination (Disneyland, AfterShock…) group together.")
                 }
 
                 Section("Dates") {
@@ -56,36 +74,11 @@ struct TripEditView: View {
                     }
                 }
 
-                if !destinationOptions.isEmpty {
-                    Section("Group under destination") {
-                        Picker("Destination", selection: Binding(
-                            get: { draft.destinationID },
-                            set: { draft.destinationID = $0 }
-                        )) {
-                            Text("None").tag(UUID?.none)
-                            ForEach(destinationOptions) { dest in
-                                Text(dest.name).tag(UUID?.some(dest.id))
-                            }
-                        }
-                    }
-                }
-
-                if !family.members.isEmpty {
-                    Section("Travelers") {
-                        ForEach(family.members) { member in
-                            Button {
-                                toggle(member.name)
-                            } label: {
-                                HStack {
-                                    Text(member.name).foregroundStyle(.primary)
-                                    Spacer()
-                                    if travelers.contains(member.name) {
-                                        Image(systemName: "checkmark").foregroundStyle(Theme.Colors.brand)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Section("Travelers") {
+                    TravelerField(
+                        selected: $travelers,
+                        members: family.members,
+                        onCreate: { await family.createMember(name: $0)?.name })
                 }
 
                 Section("Details") {
@@ -112,18 +105,17 @@ struct TripEditView: View {
         }
     }
 
-    private var destinationOptions: [Destination] {
-        trips.destinations.sorted { $0.name < $1.name }
-    }
-
-    private func toggle(_ name: String) {
-        if travelers.contains(name) { travelers.remove(name) } else { travelers.insert(name) }
+    private var destinationOptions: [ComboField.Option] {
+        trips.destinations.sorted { $0.name < $1.name }.map {
+            .init(id: $0.id.uuidString, name: $0.name, icon: "mappin.and.ellipse")
+        }
     }
 
     private func save() async {
         draft.departDate = hasDates ? departDate : nil
         draft.returnDate = hasDates ? returnDate : nil
-        draft.travelers = travelers.isEmpty ? nil : Array(travelers).sorted()
+        draft.destination = destText.nilIfBlank
+        draft.travelers = travelers.isEmpty ? nil : travelers
         draft.budget = Double(budgetText.filter(\.isNumber))
         if draft.createdBy == nil { draft.createdBy = family.currentMember?.id }
         await trips.save(draft)

@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import Supabase
 
@@ -72,6 +73,16 @@ final class TripsStore {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Saves just the rich-text notes column, so a full trip upsert can't clobber it.
+    func saveTripNotes(tripID: UUID, blocks: [ContentBlock]) async {
+        struct Payload: Encodable { let notes_content: [ContentBlock] }
+        do {
+            try await supabase.from("fam_trips")
+                .update(Payload(notes_content: blocks)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].notesContent = blocks }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func delete(_ trip: Trip) async {

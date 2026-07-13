@@ -9,12 +9,8 @@ struct MainTabView: View {
             SomedayView()
                 .tabItem { Label("Someday", systemImage: "map") }
 
-            PlaceholderTab(
-                title: "Notes",
-                systemImage: "note.text",
-                message: "Travel knowledge and trip notes land in a later phase."
-            )
-            .tabItem { Label("Notes", systemImage: "note.text") }
+            NotesTabView()
+                .tabItem { Label("Notes", systemImage: "note.text") }
 
             SettingsTab()
                 .tabItem { Label("Settings", systemImage: "gearshape") }

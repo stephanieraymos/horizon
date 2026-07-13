@@ -45,6 +45,9 @@ struct Trip: Codable, Identifiable, Hashable {
     var createdBy: UUID?
     var createdAt: Date?
     var updatedAt: Date?
+    /// Rich-text notes document. Decode-only here; saved via TripsStore.saveTripNotes
+    /// so a plain trip upsert never clobbers it.
+    var notesContent: [ContentBlock]?
 
     // MARK: Derived
 
@@ -109,6 +112,7 @@ struct Trip: Codable, Identifiable, Hashable {
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case notesContent = "notes_content"
     }
 
     init(id: UUID = UUID(), familyID: UUID, name: String, destination: String? = nil,
@@ -142,6 +146,7 @@ struct Trip: Codable, Identifiable, Hashable {
         createdBy     = try c.decodeIfPresent(UUID.self, forKey: .createdBy)
         createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
+        notesContent  = try c.decodeIfPresent([ContentBlock].self, forKey: .notesContent)
     }
 
     /// Encodes only the writable columns (for upsert). Timestamps and created_by

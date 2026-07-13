@@ -28,6 +28,7 @@ struct TripDetailView: View {
                 if current.isSomeday { somedayCallout }
                 reservationsSection
                 itinerarySection
+                notesSection
                 TripPackingSection(store: detail)
                 TripExpensesSection(store: detail, trip: current)
             }
@@ -150,6 +151,29 @@ struct TripDetailView: View {
                 }
             }
         }
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Notes").font(.title3.bold())
+            NavigationLink { TripNotesEditorView(trip: current) } label: {
+                HStack {
+                    Image(systemName: "note.text").foregroundStyle(Theme.Colors.brand)
+                    Text(notesPreview ?? "Add trip notes")
+                        .foregroundStyle(notesPreview == nil ? .secondary : .primary)
+                        .lineLimit(2)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var notesPreview: String? {
+        current.notesContent?.first { ($0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) }?.text
     }
 
     private var somedayCallout: some View {

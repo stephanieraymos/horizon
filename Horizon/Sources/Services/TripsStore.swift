@@ -222,6 +222,25 @@ final class TripsStore {
         }
     }
 
+    func renameDestination(_ destination: Destination, name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        struct P: Encodable { let name: String }
+        do {
+            try await supabase.from("fam_destinations").update(P(name: trimmed)).eq("id", value: destination.id).execute()
+            if let i = destinations.firstIndex(where: { $0.id == destination.id }) { destinations[i].name = trimmed }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func trips(forDestination id: UUID) -> [Trip] {
+        trips.filter { $0.destinationID == id }
+            .sorted { ($0.departDate ?? .distantPast) > ($1.departDate ?? .distantPast) }
+    }
+
+    func tripCount(forDestination id: UUID) -> Int {
+        trips.reduce(0) { $0 + ($1.destinationID == id ? 1 : 0) }
+    }
+
     func deleteDestination(_ destination: Destination) async {
         do {
             try await supabase.from("fam_destinations").delete().eq("id", value: destination.id).execute()

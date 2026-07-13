@@ -4,6 +4,21 @@ struct TripsListView: View {
     @Environment(TripsStore.self) private var trips
     @Environment(FamilyStore.self) private var family
     @State private var showNewTrip = false
+    @State private var search = ""
+    @State private var statusFilter: TripStatus?
+
+    private func matches(_ t: Trip) -> Bool {
+        let s = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let textOK = s.isEmpty
+            || t.name.lowercased().contains(s)
+            || (t.destination?.lowercased().contains(s) ?? false)
+            || (t.departDate.map { Trip.yearFormatter.string(from: $0).contains(s) } ?? false)
+        let statusOK = statusFilter == nil || t.status == statusFilter
+        return textOK && statusOK
+    }
+
+    private var upcoming: [Trip] { trips.upcoming.filter(matches) }
+    private var past: [Trip] { trips.past.filter(matches) }
 
     var body: some View {
         NavigationStack {
@@ -17,23 +32,39 @@ struct TripsListView: View {
                         Button("New Trip") { showNewTrip = true }
                             .buttonStyle(.borderedProminent)
                     }
+                } else if upcoming.isEmpty && past.isEmpty {
+                    ContentUnavailableView.search
                 } else {
                     List {
-                        if !trips.upcoming.isEmpty {
-                            Section("Upcoming") {
-                                ForEach(trips.upcoming) { TripRow(trip: $0) }
-                            }
+                        if !upcoming.isEmpty {
+                            Section("Upcoming") { ForEach(upcoming) { TripRow(trip: $0) } }
                         }
-                        if !trips.past.isEmpty {
-                            Section("Past") {
-                                ForEach(trips.past) { TripRow(trip: $0) }
-                            }
+                        if !past.isEmpty {
+                            Section("Past") { ForEach(past) { TripRow(trip: $0) } }
                         }
                     }
                 }
             }
             .navigationTitle("Trips")
+            .searchable(text: $search, prompt: "Search trips")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { DestinationsView() } label: { Image(systemName: "map") }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { statusFilter = nil } label: {
+                            Label("All statuses", systemImage: statusFilter == nil ? "checkmark" : "line.3.horizontal")
+                        }
+                        ForEach(TripStatus.allCases, id: \.self) { s in
+                            Button { statusFilter = s } label: {
+                                Label(s.label, systemImage: statusFilter == s ? "checkmark" : s.systemImage)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: statusFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showNewTrip = true } label: { Image(systemName: "plus") }
                 }

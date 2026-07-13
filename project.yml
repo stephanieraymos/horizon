@@ -1,0 +1,66 @@
+name: Horizon
+
+options:
+  bundleIdPrefix: com.stephanieraymos
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+schemes:
+  Horizon:
+    build:
+      targets:
+        Horizon: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: FZ5HL2XU6U
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.20.0"
+
+targets:
+  Horizon:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Horizon/Sources
+      - path: Horizon/Resources
+        optional: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.stephanieraymos.horizon
+        INFOPLIST_FILE: "Horizon/Info.plist"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Mac Catalyst: one app for iPhone/iPad/Mac, sharing the iOS bundle id
+        # (Universal Purchase). The Mac build attaches to the same App Store record.
+        SUPPORTS_MACCATALYST: "YES"
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Automatic
+    entitlements:
+      path: Horizon/Resources/Horizon.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.stephanieraymos.horizon
+    dependencies:
+      - package: Supabase
+        product: Supabase

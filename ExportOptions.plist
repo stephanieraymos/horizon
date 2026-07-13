@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- iOS App Store upload. Automatic signing: with the shared App Store    -->
+    <!-- Connect API key and -allowProvisioningUpdates, Xcode creates/renews   -->
+    <!-- the distribution profile for com.stephanieraymos.horizon on the fly,  -->
+    <!-- so there is no per-app .mobileprovision to download and store.        -->
+    <key>method</key>
+    <string>app-store-connect</string>
+    <key>teamID</key>
+    <string>FZ5HL2XU6U</string>
+    <key>signingStyle</key>
+    <string>automatic</string>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>compileBitcode</key>
+    <false/>
+</dict>
+</plist>

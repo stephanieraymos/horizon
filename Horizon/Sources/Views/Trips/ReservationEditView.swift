@@ -10,6 +10,7 @@ struct ReservationEditView: View {
     @State private var startAt: Date
     @State private var endAt: Date
     @State private var costText: String
+    @State private var typeText: String
 
     init(reservation: Reservation) {
         _draft = State(initialValue: reservation)
@@ -18,17 +19,21 @@ struct ReservationEditView: View {
         _startAt = State(initialValue: reservation.startAt ?? Date())
         _endAt = State(initialValue: reservation.endAt ?? reservation.startAt ?? Date())
         _costText = State(initialValue: reservation.costCents.map { String(format: "%.2f", Double($0) / 100) } ?? "")
+        _typeText = State(initialValue: reservation.type.label)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Type", selection: $draft.type) {
-                        ForEach(ReservationType.allCases, id: \.self) { t in
-                            Label(t.label, systemImage: t.systemImage).tag(t)
-                        }
-                    }
+                    ComboField(
+                        placeholder: "Type",
+                        text: $typeText,
+                        options: ReservationType.allCases.map { .init(id: $0.rawValue, name: $0.label, icon: $0.systemImage) },
+                        allowAdd: false,
+                        onPick: { opt in
+                            if let t = ReservationType(rawValue: opt.id) { draft.type = t }
+                        })
                     TextField(titlePlaceholder, text: $draft.title)
                     TextField("Confirmation #", text: bind(\.confirmationNumber))
                 }
@@ -56,7 +61,7 @@ struct ReservationEditView: View {
                 }
 
                 Section("Location") {
-                    TextField("Address", text: bind(\.address), axis: .vertical)
+                    PlaceComboField(placeholder: "Address / place", text: bind(\.address), placeID: $draft.placeID)
                     TextField("Maps URL", text: bind(\.mapsURL))
                 }
 

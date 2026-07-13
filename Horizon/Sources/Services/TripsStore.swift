@@ -10,6 +10,7 @@ import WidgetKit
 final class TripsStore {
     var trips: [Trip] = []
     var destinations: [Destination] = []
+    var places: [Place] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -38,7 +39,26 @@ final class TripsStore {
         } catch {
             // Non-fatal — destinations are supplementary.
         }
+        do {
+            places = try await supabase.from("fam_places").select().order("name").execute().value
+        } catch { /* non-fatal */ }
         publishWidgetSnapshot()
+    }
+
+    /// Inserts a place and returns it (for inline "add new" in location pickers).
+    @discardableResult
+    func createPlace(familyID: UUID, name: String) async -> Place? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let existing = places.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        do {
+            let row: Place = try await supabase.from("fam_places")
+                .insert(Place(familyID: familyID, name: trimmed)).select().single().execute().value
+            places.append(row); places.sort { $0.name < $1.name }
+            return row
+        } catch { return nil }
     }
 
     /// Writes the next-trip snapshot to the App Group and refreshes widgets.

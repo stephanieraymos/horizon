@@ -94,11 +94,13 @@ private struct ExpenseEditView: View {
     let store: TripDetailStore
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
+    @Environment(TripsStore.self) private var trips
 
     @State private var draft: Expense
     @State private var amountText: String
     @State private var spentOn: Date
     @State private var category: String
+    @State private var placeText: String = ""
     @State private var involved: Set<UUID>
     @State private var shares: [UUID: String]
 
@@ -122,11 +124,8 @@ private struct ExpenseEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Category", selection: $category) {
-                        ForEach(ExpenseCategory.allCases, id: \.self) {
-                            Label($0.rawValue, systemImage: $0.systemImage).tag($0.rawValue)
-                        }
-                    }
+                    ComboField(placeholder: "Category", text: $category,
+                               options: categoryOptions, pickIcon: "tag")
                     TextField("Description", text: Binding(
                         get: { draft.description ?? "" }, set: { draft.description = $0.nilIfBlank }))
                     TextField("Amount (USD)", text: $amountText)
@@ -134,6 +133,7 @@ private struct ExpenseEditView: View {
                         .keyboardType(.decimalPad)
                         #endif
                     DatePicker("Date", selection: $spentOn, displayedComponents: .date)
+                    PlaceComboField(placeholder: "Place (optional)", text: $placeText, placeID: $draft.placeID)
                     Picker("Paid by", selection: $draft.paidBy) {
                         Text("—").tag(UUID?.none)
                         ForEach(family.members) { Text($0.name).tag(UUID?.some($0.id)) }
@@ -179,6 +179,11 @@ private struct ExpenseEditView: View {
                 }
             }
             .navigationTitle("Expense")
+            .onAppear {
+                if let pid = draft.placeID, let p = trips.places.first(where: { $0.id == pid }) {
+                    placeText = p.name
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -187,6 +192,12 @@ private struct ExpenseEditView: View {
                 }
             }
         }
+    }
+
+    private var categoryOptions: [ComboField.Option] {
+        let used = Set(store.expenses.map(\.category))
+        return Set(ExpenseCategory.allCases.map(\.rawValue)).union(used).sorted()
+            .map { .init(id: $0, name: $0, icon: ExpenseCategory.icon(for: $0)) }
     }
 
     private func toggle(_ id: UUID) {

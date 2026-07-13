@@ -13,6 +13,7 @@ final class TripDetailStore {
     var packing: [PackingItem] = []
     var expenses: [Expense] = []
     var splits: [ExpenseSplit] = []
+    var documents: [TripDocument] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -30,6 +31,7 @@ final class TripDetailStore {
         packing = await pack
         expenses = await exp
         splits = await fetchSplits(for: expenses.map(\.id))
+        documents = await fetchDocuments()
     }
 
     private func fetchReservations() async -> [Reservation] {
@@ -170,6 +172,41 @@ final class TripDetailStore {
 
     func splits(for expense: Expense) -> [ExpenseSplit] {
         splits.filter { $0.expenseID == expense.id }
+    }
+
+    // MARK: Documents
+
+    private func fetchDocuments() async -> [TripDocument] {
+        do {
+            return try await supabase.from("fam_trip_documents")
+                .select().eq("trip_id", value: tripID).order("created_at", ascending: false).execute().value
+        } catch { return [] }
+    }
+
+    /// Uploads a file to the trip-docs bucket and records it. Path is
+    /// <family_id>/<trip_id>/<uuid>.<ext> so Storage RLS scopes by family.
+    func addDocument(familyID: UUID, data: Data, fileName: String, contentType: String,
+                     kind: DocumentKind, createdBy: UUID?) async {
+        let ext = (fileName as NSString).pathExtension.isEmpty ? "dat" : (fileName as NSString).pathExtension
+        let docID = UUID()
+        let path = "\(familyID.uuidString)/\(tripID.uuidString)/\(docID.uuidString).\(ext)"
+        do {
+            try await StorageService.upload(path: path, data: data, contentType: contentType)
+            var doc = TripDocument(id: docID, familyID: familyID, tripID: tripID, kind: kind,
+                                   storagePath: path, fileName: fileName, contentType: contentType,
+                                   title: fileName, createdBy: createdBy)
+            doc.isSensitive = (kind == .passport)
+            try await supabase.from("fam_trip_documents").insert(doc).execute()
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deleteDocument(_ doc: TripDocument) async {
+        do {
+            try? await StorageService.remove(path: doc.storagePath)
+            try await supabase.from("fam_trip_documents").delete().eq("id", value: doc.id).execute()
+            documents.removeAll { $0.id == doc.id }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     var tripTotal: Double { expenses.reduce(0) { $0 + $1.amount } }

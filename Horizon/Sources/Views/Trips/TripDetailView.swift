@@ -31,6 +31,7 @@ struct TripDetailView: View {
                 notesSection
                 TripPackingSection(store: detail)
                 TripExpensesSection(store: detail, trip: current)
+                TripDocumentsSection(store: detail, familyID: current.familyID)
             }
             .padding()
         }

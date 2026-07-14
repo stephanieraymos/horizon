@@ -27,7 +27,7 @@ struct BlockDocumentEditor: View {
                         duplicate: { duplicate(blockId) },
                         delete: { deleteBlock(blockId) })
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 5, leading: 18, bottom: 5, trailing: 18))
                     .id(blockId)
                 }
                 .onDelete { blocks.remove(atOffsets: $0) }

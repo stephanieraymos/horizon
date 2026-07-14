@@ -166,23 +166,29 @@ struct ContentBlockRow: View {
             }
 
         case .keyFact:
-            HStack(spacing: 10) {
+            // Notion-style page property: a muted label column and a clean SF Pro
+            // value in a soft, subtle card (no monospace, no heavy chrome).
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 TextField("Label", text: $block.label.orEmpty())
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .fixedSize()
+                    .lineLimit(1)
+                    .frame(width: 118, alignment: .leading)
                 TextField("Value", text: $block.value.orEmpty())
-                    .font(.callout.monospaced())
+                    .font(.body)
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
                 if let v = block.value, !v.isEmpty {
-                    Button { copy(v) } label: { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.plain).foregroundStyle(accentColor)
+                    Button { copy(v) } label: {
+                        Image(systemName: "doc.on.doc").font(.caption)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(accentColor.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(Color.systemFill6,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
         case .contact:
             VStack(alignment: .leading, spacing: 6) {

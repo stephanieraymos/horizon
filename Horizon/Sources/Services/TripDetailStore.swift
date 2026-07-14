@@ -344,9 +344,22 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Adds a link resource (no file upload).
+    func addLink(familyID: UUID, url: String, title: String?, createdBy: UUID?) async {
+        let trimmed = url.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let normalized = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        let doc = TripDocument(familyID: familyID, tripID: tripID, kind: .link, url: normalized,
+                               title: title?.nilIfBlank, createdBy: createdBy)
+        do {
+            try await supabase.from("fam_trip_documents").insert(doc).execute()
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func deleteDocument(_ doc: TripDocument) async {
         do {
-            try? await StorageService.remove(path: doc.storagePath)
+            if let path = doc.storagePath { try? await StorageService.remove(path: path) }
             try await supabase.from("fam_trip_documents").delete().eq("id", value: doc.id).execute()
             documents.removeAll { $0.id == doc.id }
         } catch { errorMessage = error.localizedDescription }

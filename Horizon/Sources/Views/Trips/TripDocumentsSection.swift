@@ -11,24 +11,26 @@ struct TripDocumentsSection: View {
     @State private var showFileImporter = false
     @State private var viewing: TripDocument?
     @State private var uploading = false
+    @State private var addingLink = false
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 8)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Documents").font(.title3.bold())
+                Text("Resources").font(.title3.bold())
                 if uploading { ProgressView().controlSize(.small) }
                 Spacer()
                 Menu {
-                    PhotosPicker("Photo / screenshot", selection: $photoItem, matching: .images)
+                    Button("Add link", systemImage: "link") { addingLink = true }
+                    PhotosPicker("Photo / image", selection: $photoItem, matching: .images)
                     Button("File (PDF…)", systemImage: "doc") { showFileImporter = true }
                 } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                     .tint(Theme.Colors.brand)
             }
 
             if store.documents.isEmpty {
-                Text("Add booking confirmations, tickets, or passports.")
+                Text("Add links, photos, booking confirmations, tickets, or passports.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
@@ -36,8 +38,11 @@ struct TripDocumentsSection: View {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(store.documents) { doc in
                         DocumentThumb(doc: doc)
-                            .onTapGesture { if doc.isImage { viewing = doc } }
+                            .onTapGesture { open(doc) }
                             .contextMenu {
+                                if let url = doc.linkURL {
+                                    Link(destination: url) { Label("Open link", systemImage: "safari") }
+                                }
                                 Button("Delete", role: .destructive) { Task { await store.deleteDocument(doc) } }
                             }
                     }
@@ -51,6 +56,19 @@ struct TripDocumentsSection: View {
             if case .success(let urls) = result, let url = urls.first { Task { await handleFile(url) } }
         }
         .sheet(item: $viewing) { DocumentViewer(doc: $0) }
+        .sheet(isPresented: $addingLink) {
+            AddLinkSheet { url, title in
+                Task { await store.addLink(familyID: familyID, url: url, title: title,
+                                           createdBy: family.currentMember?.id) }
+            }
+        }
+    }
+
+    @Environment(\.openURL) private var openURL
+
+    private func open(_ doc: TripDocument) {
+        if let url = doc.linkURL { openURL(url) }
+        else if doc.isImage { viewing = doc }
     }
 
     private func handlePhoto(_ item: PhotosPickerItem?) async {
@@ -90,15 +108,56 @@ private struct DocumentThumb: View {
                 .frame(width: 92, height: 92)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
-                RoundedRectangle(cornerRadius: 10).fill(Color.systemFill6)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(doc.isLink ? Theme.Colors.brand.opacity(0.12) : Color.systemFill6)
                     .frame(width: 92, height: 92)
                     .overlay {
-                        Image(systemName: DocumentKind(rawValue: doc.kind)?.systemImage ?? "doc")
+                        Image(systemName: doc.isLink ? "link" : (DocumentKind(rawValue: doc.kind)?.systemImage ?? "doc"))
                             .font(.title).foregroundStyle(Theme.Colors.brand)
                     }
             }
-            Text(doc.title ?? doc.fileName ?? "File")
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(width: 92)
+            Text(doc.displayName)
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(2).frame(width: 92)
+        }
+    }
+}
+
+/// Add a link resource — URL required, pretty name optional.
+private struct AddLinkSheet: View {
+    let onAdd: (_ url: String, _ title: String?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var url = ""
+    @State private var title = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Link") {
+                    TextField("https://…", text: $url)
+                        .textContentType(.URL)
+                        .autocorrectionDisabled()
+                        #if !targetEnvironment(macCatalyst)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        #endif
+                }
+                Section {
+                    TextField("Name (optional)", text: $title)
+                } footer: {
+                    Text(title.trimmingCharacters(in: .whitespaces).isEmpty && !url.isEmpty
+                         ? "Will show as “\(prettyURLText(url))”."
+                         : "Leave blank to show a tidy version of the link.")
+                }
+            }
+            .navigationTitle("Add Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { onAdd(url, title.nilIfBlank); dismiss() }
+                        .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
         }
     }
 }

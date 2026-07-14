@@ -3,6 +3,9 @@ import SwiftUI
 struct MainTabView: View {
     var body: some View {
         TabView {
+            HomeView()
+                .tabItem { Label("Home", systemImage: "house") }
+
             TripsListView()
                 .tabItem { Label("Trips", systemImage: "airplane") }
 

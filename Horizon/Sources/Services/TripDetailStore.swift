@@ -14,7 +14,6 @@ final class TripDetailStore {
     var expenses: [Expense] = []
     var splits: [ExpenseSplit] = []
     var documents: [TripDocument] = []
-    var purchases: [TripPurchase] = []
     var todos: [TripTodo] = []
     var tripPlaces: [TripPlace] = []
     var isLoading = false
@@ -35,7 +34,6 @@ final class TripDetailStore {
         expenses = await exp
         splits = await fetchSplits(for: expenses.map(\.id))
         documents = await fetchDocuments()
-        purchases = await fetchPurchases()
         todos = await fetchTodos()
         tripPlaces = await fetchTripPlaces()
     }
@@ -104,54 +102,40 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    // MARK: Purchases (shopping list)
+    // MARK: Shopping ↔ expenses (unified spending)
 
-    private func fetchPurchases() async -> [TripPurchase] {
-        do {
-            return try await supabase.from("fam_trip_purchases")
-                .select().eq("trip_id", value: tripID).order("name").execute().value
-        } catch { return [] }
-    }
+    /// Items still to buy (not yet purchased) — the shopping list view.
+    var shoppingItems: [Expense] { expenses.filter { !$0.isPurchased } }
+    /// Purchased items — the expense ledger view.
+    var purchasedExpenses: [Expense] { expenses.filter(\.isPurchased) }
 
-    func savePurchase(_ p: TripPurchase) async {
-        do {
-            try await supabase.from("fam_trip_purchases").upsert(p).execute()
-            await load()
-        } catch { errorMessage = error.localizedDescription }
-    }
-
-    /// Tapping an item checks it off as Purchased (or back to To buy). "In cart"
-    /// is a deliberate choice set in the editor, not part of the quick toggle.
-    func togglePurchased(_ p: TripPurchase) async {
-        var updated = p
-        updated.status = (p.status == .purchased) ? .notPurchased : .purchased
-        if let idx = purchases.firstIndex(where: { $0.id == p.id }) { purchases[idx] = updated }
-        do {
-            try await supabase.from("fam_trip_purchases")
-                .update(["status": updated.status.rawValue]).eq("id", value: p.id).execute()
-        } catch { errorMessage = error.localizedDescription }
-    }
-
-    func deletePurchase(_ p: TripPurchase) async {
-        do {
-            try await supabase.from("fam_trip_purchases").delete().eq("id", value: p.id).execute()
-            purchases.removeAll { $0.id == p.id }
-        } catch { errorMessage = error.localizedDescription }
-    }
-
-    var purchasesByTag: [(tag: String, items: [TripPurchase])] {
-        Dictionary(grouping: purchases, by: { $0.tag?.nilIfBlank ?? "Other" })
+    var shoppingByTag: [(tag: String, items: [Expense])] {
+        Dictionary(grouping: shoppingItems, by: { $0.tag?.nilIfBlank ?? "Other" })
             .map { (tag: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
             .sorted { $0.tag < $1.tag }
     }
-
-    var purchaseTags: [String] {
-        Array(Set(purchases.compactMap { $0.tag?.nilIfBlank })).sorted()
+    var shoppingTags: [String] {
+        Array(Set(expenses.compactMap { $0.tag?.nilIfBlank })).sorted()
     }
+    var shoppingToBuyCount: Int { shoppingItems.count }
+    /// Estimated cost of everything still to buy (projected spend).
+    var shoppingProjected: Double { shoppingItems.reduce(0) { $0 + $1.amount } }
 
-    var purchasesToBuy: Int { purchases.filter { $0.status != .purchased }.count }
-    var purchasesSpent: Double {
-        purchases.filter { $0.status == .purchased }.compactMap(\.amountDollars).reduce(0, +)
+    /// Quick toggle from the shopping list — mark purchased (defaulting the payer,
+    /// since Stephanie is almost always the payer) or back to to-buy.
+    func togglePurchased(_ e: Expense, defaultPayer: UUID?) async {
+        var updated = e
+        if e.isPurchased {
+            updated.status = .notPurchased
+        } else {
+            updated.status = .purchased
+            if updated.paidBy == nil { updated.paidBy = defaultPayer }
+            if updated.spentOn == nil { updated.spentOn = Date() }
+        }
+        if let idx = expenses.firstIndex(where: { $0.id == e.id }) { expenses[idx] = updated }
+        do {
+            try await supabase.from("fam_trip_expenses").upsert(updated).execute()
+        } catch { errorMessage = error.localizedDescription }
     }
 
     private func fetchReservations() async -> [Reservation] {
@@ -375,12 +359,12 @@ final class TripDetailStore {
         }
         if !newPacking.isEmpty { try? await supabase.from("fam_trip_packing").insert(newPacking).execute() }
 
-        let newPurchases = purchases.map {
-            TripPurchase(familyID: $0.familyID, tripID: newTripID, name: $0.name,
-                         amountCents: $0.amountCents, status: .notPurchased, tag: $0.tag,
-                         purchasedFrom: $0.purchasedFrom)
+        let newShopping = shoppingItems.map {
+            Expense(tripID: newTripID, category: $0.category, description: $0.description,
+                    amount: $0.amount, status: .notPurchased, tag: $0.tag, link: $0.link,
+                    purchasedFrom: $0.purchasedFrom, notes: $0.notes)
         }
-        if !newPurchases.isEmpty { try? await supabase.from("fam_trip_purchases").insert(newPurchases).execute() }
+        if !newShopping.isEmpty { try? await supabase.from("fam_trip_expenses").insert(newShopping).execute() }
 
         let newDays = itinerary.map { day -> ItineraryDay in
             ItineraryDay(tripID: newTripID, dayDate: day.dayDate,
@@ -391,11 +375,20 @@ final class TripDetailStore {
         if !newDays.isEmpty { try? await supabase.from("fam_trip_itinerary").insert(newDays).execute() }
     }
 
-    var tripTotal: Double { expenses.reduce(0) { $0 + $1.amount } }
+    /// Actual spend — purchased items only.
+    var tripTotal: Double { purchasedExpenses.reduce(0) { $0 + $1.amount } }
+    /// Actual + not-yet-purchased (projected) spend.
+    var projectedTotal: Double { expenses.reduce(0) { $0 + $1.amount } }
 
-    /// Per-member owed totals across all splits.
+    /// Splits belonging to purchased items (shopping items don't settle up).
+    private var purchasedSplits: [ExpenseSplit] {
+        let ids = Set(purchasedExpenses.map(\.id))
+        return splits.filter { ids.contains($0.expenseID) }
+    }
+
+    /// Per-member owed totals across purchased splits.
     var perMemberTotals: [(memberID: UUID, amount: Double)] {
-        Dictionary(grouping: splits, by: \.memberID)
+        Dictionary(grouping: purchasedSplits, by: \.memberID)
             .map { (memberID: $0.key, amount: $0.value.reduce(0) { $0 + $1.amount }) }
             .sorted { $0.amount > $1.amount }
     }
@@ -404,9 +397,9 @@ final class TripDetailStore {
     /// matches debtors to creditors into the fewest transfers.
     func settleUp() -> [(from: UUID, to: UUID, amount: Double)] {
         var paid: [UUID: Double] = [:]
-        for e in expenses { if let p = e.paidBy { paid[p, default: 0] += e.amount } }
+        for e in purchasedExpenses { if let p = e.paidBy { paid[p, default: 0] += e.amount } }
         var owes: [UUID: Double] = [:]
-        for s in splits { owes[s.memberID, default: 0] += s.amount }
+        for s in purchasedSplits { owes[s.memberID, default: 0] += s.amount }
 
         let ids = Set(paid.keys).union(owes.keys)
         var creditors = ids.map { (id: $0, amt: (paid[$0] ?? 0) - (owes[$0] ?? 0)) }

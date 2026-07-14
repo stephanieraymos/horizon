@@ -1,49 +1,57 @@
 import SwiftUI
 
+/// The Shopping view — items still to buy (unified `fam_trip_expenses` rows with
+/// a non-purchased status). Checking one off marks it purchased, moving it into
+/// Expenses and the budget.
 struct TripPurchasesSection: View {
     let store: TripDetailStore
     let familyID: UUID
-    @State private var editing: TripPurchase?
+    @Environment(FamilyStore.self) private var family
+    @State private var editing: Expense?
 
     private static let defaultTags = ["Food / Kitchen", "Gear / Tools", "Clothing", "Toiletries", "Other"]
+
+    private func newItem() -> Expense {
+        Expense(tripID: store.tripID, category: ExpenseCategory.merch.rawValue, status: .notPurchased)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Shopping").font(.title3.bold())
                 Spacer()
-                Button { editing = TripPurchase(familyID: familyID, tripID: store.tripID) } label: {
+                Button { editing = newItem() } label: {
                     Image(systemName: "plus.circle.fill").font(.title3)
                 }
                 .tint(Theme.Colors.brand)
             }
 
-            if store.purchases.isEmpty {
-                Text("Build a shopping list for this trip.")
+            if store.shoppingItems.isEmpty {
+                Text("Build a shopping list for this trip. Check items off to move them into Expenses.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
             } else {
                 HStack {
-                    Label("\(store.purchasesToBuy) to buy", systemImage: "cart")
+                    Label("\(store.shoppingToBuyCount) to buy", systemImage: "cart")
                     Spacer()
-                    if let spent = TripFormat.money(store.purchasesSpent), store.purchasesSpent > 0 {
-                        Text("\(spent) purchased").foregroundStyle(.secondary)
+                    if let est = TripFormat.money(store.shoppingProjected), store.shoppingProjected > 0 {
+                        Text("\(est) est.").foregroundStyle(.secondary)
                     }
                 }
                 .font(.subheadline)
                 .padding().background(Theme.Colors.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
 
-                ForEach(store.purchasesByTag, id: \.tag) { group in
+                ForEach(store.shoppingByTag, id: \.tag) { group in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(group.tag).font(.subheadline.bold()).foregroundStyle(.secondary)
                         ForEach(group.items) { item in
                             PurchaseRow(item: item,
-                                        onToggle: { Task { await store.togglePurchased(item) } },
+                                        onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
                                         onEdit: { editing = item })
                                 .contextMenu {
                                     Button("Edit") { editing = item }
-                                    Button("Delete", role: .destructive) { Task { await store.deletePurchase(item) } }
+                                    Button("Delete", role: .destructive) { Task { await store.deleteExpense(item) } }
                                 }
                         }
                     }
@@ -52,14 +60,14 @@ struct TripPurchasesSection: View {
             }
         }
         .sheet(item: $editing) { p in
-            PurchaseEditView(store: store, purchase: p,
-                             tagOptions: (Set(Self.defaultTags).union(store.purchaseTags)).sorted())
+            PurchaseEditView(store: store, item: p,
+                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted())
         }
     }
 }
 
 private struct PurchaseRow: View {
-    let item: TripPurchase
+    let item: Expense
     let onToggle: () -> Void
     let onEdit: () -> Void
 
@@ -106,26 +114,31 @@ private struct PurchaseRow: View {
 
 private struct PurchaseEditView: View {
     let store: TripDetailStore
+    @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
 
-    @State private var draft: TripPurchase
+    @State private var draft: Expense
     @State private var amountText: String
     @State private var tagText: String
     let tagOptions: [String]
 
-    init(store: TripDetailStore, purchase: TripPurchase, tagOptions: [String]) {
+    init(store: TripDetailStore, item: Expense, tagOptions: [String]) {
         self.store = store
         self.tagOptions = tagOptions
-        _draft = State(initialValue: purchase)
-        _amountText = State(initialValue: purchase.amountCents.map { String(format: "%.2f", Double($0) / 100) } ?? "")
-        _tagText = State(initialValue: purchase.tag ?? "")
+        _draft = State(initialValue: item)
+        _amountText = State(initialValue: item.amount == 0 ? "" : String(format: "%.2f", item.amount))
+        _tagText = State(initialValue: item.tag ?? "")
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(get: { draft.description ?? "" }, set: { draft.description = $0.nilIfBlank })
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Item", text: $draft.name)
+                    TextField("Item", text: nameBinding)
                     Picker("Status", selection: $draft.status) {
                         ForEach(PurchaseStatus.allCases, id: \.self) { s in
                             Label(s.label, systemImage: s.systemImage).tag(s)
@@ -152,7 +165,6 @@ private struct PurchaseEditView: View {
                         .textInputAutocapitalization(.never)
                         #endif
                 }
-
                 Section("Notes") {
                     TextField("Paste model, item #, specs…", text: Binding(
                         get: { draft.notes ?? "" }, set: { draft.notes = $0.nilIfBlank }),
@@ -160,12 +172,12 @@ private struct PurchaseEditView: View {
                         .lineLimit(2...8)
                 }
             }
-            .navigationTitle(draft.name.isEmpty ? "New Item" : "Edit Item")
+            .navigationTitle((draft.description ?? "").isEmpty ? "New Item" : "Edit Item")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }
-                        .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled((draft.description ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
@@ -173,8 +185,13 @@ private struct PurchaseEditView: View {
 
     private func save() async {
         draft.tag = tagText.nilIfBlank
-        draft.amountCents = Double(amountText.replacingOccurrences(of: ",", with: "")).map { Int(($0 * 100).rounded()) }
-        await store.savePurchase(draft)
+        draft.amount = Double(amountText.replacingOccurrences(of: ",", with: "")) ?? 0
+        // Marking purchased here defaults the payer to the current member.
+        if draft.isPurchased, draft.paidBy == nil {
+            draft.paidBy = family.currentMember?.id
+            if draft.spentOn == nil { draft.spentOn = Date() }
+        }
+        await store.saveExpense(draft, splits: store.splits(for: draft))
         dismiss()
     }
 }

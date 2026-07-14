@@ -26,7 +26,7 @@ struct TripExpensesSection: View {
                 .tint(Theme.Colors.brand)
             }
 
-            if store.expenses.isEmpty {
+            if store.purchasedExpenses.isEmpty {
                 Text("Log expenses and split them across who came along.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,9 +88,17 @@ struct TripExpensesSection: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Trip total").font(.subheadline).foregroundStyle(.secondary)
+                Text("Spent so far").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text(TripFormat.money(store.tripTotal) ?? "$0").font(.headline)
+            }
+            if store.shoppingProjected > 0 {
+                HStack {
+                    Text("Projected (with to-buy)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(TripFormat.money(store.projectedTotal) ?? "$0")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                }
             }
 
             if let budget = trip.budget, budget > 0 {
@@ -137,7 +145,7 @@ struct TripExpensesSection: View {
     }
 
     private var byCategory: [(category: String, items: [Expense])] {
-        Dictionary(grouping: store.expenses, by: \.category)
+        Dictionary(grouping: store.purchasedExpenses, by: \.category)
             .map { (category: $0.key, items: $0.value) }
             .sorted { $0.category < $1.category }
     }
@@ -266,6 +274,8 @@ private struct ExpenseEditView: View {
                 if let pid = draft.placeID, let p = trips.places.first(where: { $0.id == pid }) {
                     placeText = p.name
                 }
+                // Default the payer to the current member (usually the payer).
+                if draft.paidBy == nil { draft.paidBy = family.currentMember?.id }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

@@ -1,5 +1,4 @@
 import Foundation
-import CoreLocation
 
 /// One day's forecast for the trip weather strip.
 struct DailyWeather: Identifiable, Hashable {
@@ -78,19 +77,48 @@ enum WeatherService {
     /// Max days ahead Open-Meteo's forecast covers.
     static let forecastWindowDays = 16
 
-    struct GeoResult { let latitude: Double; let longitude: Double; let name: String }
+    struct GeoResult: Decodable { let latitude: Double; let longitude: Double; let name: String }
 
-    /// Geocode via Apple's CLGeocoder — handles full street addresses, POIs, and
-    /// messy strings (e.g. "Bodega Bay (Doran Beach)"), unlike a place-name-only
-    /// API. Results are cached on the trip row, so this runs rarely.
+    /// Geocode via Open-Meteo's keyless place-name API (pure HTTP — no reliance on
+    /// device location services, unlike CLGeocoder). It only matches place names,
+    /// so we try progressively cleaner candidates: strip any parenthetical, then
+    /// fall back to the locality parsed out of a street address.
     static func geocode(_ query: String) async -> GeoResult? {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let geocoder = CLGeocoder()
-        guard let placemarks = try? await geocoder.geocodeAddressString(trimmed),
-              let p = placemarks.first, let loc = p.location else { return nil }
-        let name = p.locality ?? p.name ?? trimmed
-        return GeoResult(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude, name: name)
+        for candidate in candidates(from: query) {
+            if let r = await lookup(candidate) { return r }
+        }
+        return nil
+    }
+
+    /// Query forms to try, most-specific-that-still-resolves first.
+    static func candidates(from raw: String) -> [String] {
+        let noParens = raw.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var out: [String] = []
+        func add(_ s: String) {
+            let t = s.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty, !out.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) { out.append(t) }
+        }
+        let parts = noParens.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        if parts.count >= 2 {
+            // "123 Foo Rd, Bodega Bay, CA, 94923" → locality is before state/zip.
+            add(parts.count >= 3 ? parts[parts.count - 3] : parts[0])
+        }
+        add(noParens)
+        add(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        return out
+    }
+
+    private static func lookup(_ query: String) async -> GeoResult? {
+        guard !query.isEmpty,
+              let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://geocoding-api.open-meteo.com/v1/search?name=\(encoded)&count=1&language=en&format=json")
+        else { return nil }
+        struct Response: Decodable { let results: [GeoResult]? }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(Response.self, from: data).results?.first
+        } catch { return nil }
     }
 
     static func dailyForecast(latitude: Double, longitude: Double,

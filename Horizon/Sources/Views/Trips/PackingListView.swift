@@ -292,7 +292,7 @@ struct PackingItemEditView: View {
     }
 
     private func save() async {
-        guard let memberID else { return }
+        // memberID may be nil — that means "Everyone" (shared), which is valid.
         let updated = PackingItem(id: existing?.id ?? UUID(), tripID: store.tripID, memberID: memberID,
                                   item: item.trimmingCharacters(in: .whitespaces),
                                   checked: existing?.checked ?? false,

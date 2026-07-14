@@ -6,6 +6,9 @@ struct TripsListView: View {
     @State private var showNewTrip = false
     @State private var search = ""
     @State private var statusFilter: TripStatus?
+    @State private var manageSheet: ManageSheet?
+
+    private enum ManageSheet: Int, Identifiable { case destinations, places; var id: Int { rawValue } }
 
     private func matches(_ t: Trip) -> Bool {
         let s = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -54,7 +57,10 @@ struct TripsListView: View {
             .searchable(text: $search, prompt: "Search trips")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { DestinationsView() } label: { Image(systemName: "map") }
+                    Menu {
+                        Button("Destinations", systemImage: "mappin.and.ellipse") { manageSheet = .destinations }
+                        Button("Places", systemImage: "map") { manageSheet = .places }
+                    } label: { Image(systemName: "map") }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -80,6 +86,14 @@ struct TripsListView: View {
                     TripEditView(trip: Trip(familyID: familyID, name: ""))
                 } else {
                     Text("Loading your family…").padding()
+                }
+            }
+            .sheet(item: $manageSheet) { s in
+                NavigationStack {
+                    switch s {
+                    case .destinations: DestinationsView()
+                    case .places: PlacesView()
+                    }
                 }
             }
         }

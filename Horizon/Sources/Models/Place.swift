@@ -8,6 +8,7 @@ struct Place: Codable, Identifiable, Hashable {
     var category: String?
     var address: String?
     var mapsURL: String?
+    var notes: String?
     var visited: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -15,13 +16,13 @@ struct Place: Codable, Identifiable, Hashable {
         case familyID = "family_id"
         case name, category, address
         case mapsURL = "maps_url"
-        case visited
+        case notes, visited
     }
 
     init(id: UUID = UUID(), familyID: UUID, name: String, category: String? = nil,
-         address: String? = nil, mapsURL: String? = nil, visited: Bool = false) {
+         address: String? = nil, mapsURL: String? = nil, notes: String? = nil, visited: Bool = false) {
         self.id = id; self.familyID = familyID; self.name = name; self.category = category
-        self.address = address; self.mapsURL = mapsURL; self.visited = visited
+        self.address = address; self.mapsURL = mapsURL; self.notes = notes; self.visited = visited
     }
 
     init(from decoder: Decoder) throws {
@@ -32,6 +33,7 @@ struct Place: Codable, Identifiable, Hashable {
         category = try c.decodeIfPresent(String.self, forKey: .category)
         address = try c.decodeIfPresent(String.self, forKey: .address)
         mapsURL = try c.decodeIfPresent(String.self, forKey: .mapsURL)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
         visited = try c.decodeIfPresent(Bool.self, forKey: .visited) ?? false
     }
 
@@ -43,6 +45,7 @@ struct Place: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(category, forKey: .category)
         try c.encodeIfPresent(address, forKey: .address)
         try c.encodeIfPresent(mapsURL, forKey: .mapsURL)
+        try c.encodeIfPresent(notes, forKey: .notes)
         try c.encode(visited, forKey: .visited)
     }
 }

@@ -11,6 +11,7 @@ struct ReservationEditView: View {
     @State private var endAt: Date
     @State private var costText: String
     @State private var typeText: String
+    @State private var pasteText: String = ""
 
     init(reservation: Reservation) {
         _draft = State(initialValue: reservation)
@@ -36,6 +37,17 @@ struct ReservationEditView: View {
                         })
                     TextField(titlePlaceholder, text: $draft.title)
                     TextField("Confirmation #", text: bind(\.confirmationNumber))
+                }
+
+                Section {
+                    TextField("Paste a confirmation email/text…", text: $pasteText, axis: .vertical)
+                        .lineLimit(2...5)
+                    Button("Fill from text", systemImage: "wand.and.stars") { applyParse() }
+                        .disabled(pasteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                } header: {
+                    Text("Auto-fill (beta)")
+                } footer: {
+                    Text("Pulls out confirmation #, flight number, and airports where it can.")
                 }
 
                 Section("When") {
@@ -90,6 +102,21 @@ struct ReservationEditView: View {
         case .lodging: "Hotel / place name"
         case .dining: "Restaurant"
         default: "Name"
+        }
+    }
+
+    private func applyParse() {
+        let p = ReservationParser.parse(pasteText)
+        if let c = p.confirmation { draft.confirmationNumber = c }
+        if let a = p.airline { draft.details["airline"] = a }
+        if let f = p.flightNumber {
+            draft.details["flight_number"] = f
+            if draft.title.trimmingCharacters(in: .whitespaces).isEmpty { draft.title = f }
+        }
+        if let d = p.departAirport { draft.details["depart_airport"] = d }
+        if let ar = p.arriveAirport { draft.details["arrive_airport"] = ar }
+        if p.flightNumber != nil, draft.type == .other {
+            draft.type = .flight; typeText = ReservationType.flight.label
         }
     }
 

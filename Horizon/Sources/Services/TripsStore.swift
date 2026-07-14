@@ -50,6 +50,22 @@ final class TripsStore {
         publishWidgetSnapshot()
     }
 
+    func savePlace(_ place: Place) async {
+        do {
+            try await supabase.from("fam_places").upsert(place).execute()
+            if let i = places.firstIndex(where: { $0.id == place.id }) { places[i] = place }
+            else { places.append(place) }
+            places.sort { $0.name < $1.name }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Trips that reference a place (by name match on destination, or a linked
+    /// reservation/expense place — name match is the reliable cross-cut here).
+    func trips(referencingPlace name: String) -> [Trip] {
+        let n = name.lowercased()
+        return trips.filter { ($0.destination?.lowercased().contains(n) ?? false) }
+    }
+
     func icon(forCategory name: String?) -> String {
         guard let name else { return "shippingbox" }
         return packingCategories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.icon ?? "shippingbox"

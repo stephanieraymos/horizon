@@ -10,6 +10,9 @@ enum ReservationParser {
         var flightNumber: String?
         var departAirport: String?
         var arriveAirport: String?
+        var startAt: Date?
+        /// Best-guess reservation type from keywords (nil if unclear).
+        var type: ReservationType?
     }
 
     private static func firstMatch(_ pattern: String, in text: String, group: Int = 1) -> String? {
@@ -56,6 +59,34 @@ enum ReservationParser {
                 p.arriveAirport = codes[1]
             }
         }
+
+        // Date/time — NSDataDetector handles many natural formats robustly.
+        p.startAt = firstDate(in: text)
+
+        // Type inference from keywords (flight already implied by a flight number).
+        p.type = inferType(from: text, hasFlight: p.flightNumber != nil)
+
         return p
+    }
+
+    /// First date (with time if present) mentioned in the text.
+    private static func firstDate(in text: String) -> Date? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.firstMatch(in: text, range: range)?.date
+    }
+
+    private static func inferType(from text: String, hasFlight: Bool) -> ReservationType? {
+        if hasFlight { return .flight }
+        let t = text.lowercased()
+        func has(_ words: [String]) -> Bool { words.contains { t.contains($0) } }
+        if has(["check-in", "check in", "hotel", "nights", "room ", "airbnb", "vrbo", "resort"]) { return .lodging }
+        if has(["rental car", "car rental", "pick-up", "pickup location", "hertz", "enterprise", "avis"]) { return .car }
+        if has(["table for", "party of", "reservation for", "restaurant", "dining"]) { return .dining }
+        if has(["train", "amtrak", "rail", "platform"]) { return .rail }
+        if has(["ferry"]) { return .ferry }
+        if has(["admission", "ticket", "park hopper", "theme park", "disneyland", "universal"]) { return .themepark }
+        if has(["flight", "airline", "boarding", "departure gate"]) { return .flight }
+        return nil
     }
 }

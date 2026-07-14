@@ -19,6 +19,7 @@ struct TripDetailView: View {
     @State private var coverError: String?
     @State private var calendarMessage: String?
     @State private var calendarIsError = false
+    @State private var showPasteReservation = false
 
     init(trip: Trip) {
         self.trip = trip
@@ -98,6 +99,15 @@ struct TripDetailView: View {
         }
         .sheet(isPresented: $showMoodBoard) {
             TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
+        }
+        .sheet(isPresented: $showPasteReservation) {
+            PasteReservationSheet(familyID: current.familyID, tripID: current.id) { parsed in
+                // Let the paste sheet finish dismissing before presenting the editor.
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    editingReservation = parsed
+                }
+            }
         }
         .confirmationDialog("Delete this trip?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Trip", role: .destructive) {
@@ -241,6 +251,10 @@ struct TripDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Reservations") {
                 Menu {
+                    Button("Paste confirmation…", systemImage: "doc.on.clipboard") {
+                        showPasteReservation = true
+                    }
+                    Divider()
                     ForEach(ReservationType.allCases, id: \.self) { type in
                         Button(type.label, systemImage: type.systemImage) {
                             editingReservation = Reservation(familyID: current.familyID,

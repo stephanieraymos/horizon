@@ -115,8 +115,12 @@ struct ReservationEditView: View {
         }
         if let d = p.departAirport { draft.details["depart_airport"] = d }
         if let ar = p.arriveAirport { draft.details["arrive_airport"] = ar }
-        if p.flightNumber != nil, draft.type == .other {
-            draft.type = .flight; typeText = ReservationType.flight.label
+        if let start = p.startAt {
+            hasStart = true; startAt = start
+        }
+        // Adopt an inferred type only when the user hasn't already chosen one.
+        if let inferred = p.type, draft.type == .other {
+            draft.type = inferred; typeText = inferred.label
         }
     }
 

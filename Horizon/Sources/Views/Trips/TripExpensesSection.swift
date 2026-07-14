@@ -42,7 +42,7 @@ struct TripExpensesSection: View {
             }
         }
         .sheet(item: $editing) { exp in
-            ExpenseEditView(store: store, expense: exp)
+            ExpenseEditView(store: store, expense: exp, travelerNames: trip.travelers ?? [])
         }
     }
 
@@ -137,8 +137,19 @@ private struct ExpenseEditView: View {
     @State private var involved: Set<UUID>
     @State private var shares: [UUID: String]
 
-    init(store: TripDetailStore, expense: Expense) {
+    let travelerNames: [String]
+
+    /// Only people on this trip can pay for or share an expense (falls back to the
+    /// whole family if the trip has no travelers set yet).
+    private var eligibleMembers: [FamilyMember] {
+        let names = Set(travelerNames.map { $0.lowercased() })
+        let filtered = family.members.filter { names.contains($0.name.lowercased()) }
+        return filtered.isEmpty ? family.members : filtered
+    }
+
+    init(store: TripDetailStore, expense: Expense, travelerNames: [String]) {
         self.store = store
+        self.travelerNames = travelerNames
         _draft = State(initialValue: expense)
         _amountText = State(initialValue: expense.amount > 0 ? String(format: "%.2f", expense.amount) : "")
         _spentOn = State(initialValue: expense.spentOn ?? Date())
@@ -169,12 +180,12 @@ private struct ExpenseEditView: View {
                     PlaceComboField(placeholder: "Place (optional)", text: $placeText, placeID: $draft.placeID)
                     Picker("Paid by", selection: $draft.paidBy) {
                         Text("—").tag(UUID?.none)
-                        ForEach(family.members) { Text($0.name).tag(UUID?.some($0.id)) }
+                        ForEach(eligibleMembers) { Text($0.name).tag(UUID?.some($0.id)) }
                     }
                 }
 
                 Section {
-                    ForEach(family.members) { member in
+                    ForEach(eligibleMembers) { member in
                         HStack {
                             Button {
                                 toggle(member.id)

@@ -38,8 +38,9 @@ struct TripPurchasesSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(group.tag).font(.subheadline.bold()).foregroundStyle(.secondary)
                         ForEach(group.items) { item in
-                            PurchaseRow(item: item, onToggle: { Task { await store.cyclePurchase(item) } })
-                                .onTapGesture { editing = item }
+                            PurchaseRow(item: item,
+                                        onToggle: { Task { await store.cyclePurchase(item) } },
+                                        onEdit: { editing = item })
                                 .contextMenu {
                                     Button("Edit") { editing = item }
                                     Button("Delete", role: .destructive) { Task { await store.deletePurchase(item) } }
@@ -60,6 +61,7 @@ struct TripPurchasesSection: View {
 private struct PurchaseRow: View {
     let item: TripPurchase
     let onToggle: () -> Void
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -69,20 +71,26 @@ private struct PurchaseRow: View {
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.name).lineLimit(1)
-                    .strikethrough(item.status == .purchased)
-                    .foregroundStyle(item.status == .purchased ? .secondary : .primary)
-                if item.status == .inCart {
-                    Text("In cart").font(.caption2).foregroundStyle(Theme.Colors.brand)
-                } else if let from = item.purchasedFrom?.nilIfBlank {
-                    Text(from).font(.caption2).foregroundStyle(.secondary)
+            Button(action: onEdit) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.name).lineLimit(1)
+                            .strikethrough(item.status == .purchased)
+                            .foregroundStyle(item.status == .purchased ? .secondary : .primary)
+                        if item.status == .inCart {
+                            Text("In cart").font(.caption2).foregroundStyle(Theme.Colors.brand)
+                        } else if let from = item.purchasedFrom?.nilIfBlank {
+                            Text(from).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if let amt = TripFormat.money(item.amountDollars) {
+                        Text(amt).font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
+                .contentShape(Rectangle())
             }
-            Spacer()
-            if let amt = TripFormat.money(item.amountDollars) {
-                Text(amt).font(.subheadline).foregroundStyle(.secondary)
-            }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, 3)
     }

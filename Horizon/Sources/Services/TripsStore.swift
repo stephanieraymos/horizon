@@ -161,8 +161,10 @@ final class TripsStore {
     }
 
     /// Uploads a cover photo and links it to the trip (stores the storage path).
+    /// A fresh filename per upload changes cover_photo_url so cached images don't
+    /// keep showing the previous cover.
     func setTripCover(tripID: UUID, familyID: UUID, imageData: Data) async {
-        let path = "\(familyID.uuidString)/covers/trip-\(tripID.uuidString).jpg"
+        let path = "\(familyID.uuidString)/covers/trip-\(tripID.uuidString)-\(UUID().uuidString).jpg"
         struct P: Encodable { let cover_photo_url: String }
         do {
             try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")
@@ -172,7 +174,7 @@ final class TripsStore {
     }
 
     func setDestinationCover(id: UUID, familyID: UUID, imageData: Data) async {
-        let path = "\(familyID.uuidString)/covers/dest-\(id.uuidString).jpg"
+        let path = "\(familyID.uuidString)/covers/dest-\(id.uuidString)-\(UUID().uuidString).jpg"
         struct P: Encodable { let cover_photo_url: String }
         do {
             try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")

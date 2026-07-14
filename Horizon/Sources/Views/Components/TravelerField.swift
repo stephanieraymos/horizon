@@ -18,17 +18,18 @@ struct TravelerField: View {
         members.first { $0.name == name }?.avatarURL
     }
 
+    // Show while typing (not focus-gated — see ComboField note on tap dropping).
     private var suggestions: [FamilyMember] {
-        guard focused else { return [] }
         let q = trimmed.lowercased()
+        guard !q.isEmpty else { return [] }
         return members
             .filter { !selected.contains($0.name) }
-            .filter { q.isEmpty || $0.name.lowercased().contains(q) }
+            .filter { $0.name.lowercased().contains(q) }
             .prefix(8).map { $0 }
     }
 
     private var showAdd: Bool {
-        focused && !trimmed.isEmpty &&
+        !trimmed.isEmpty &&
         !members.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame } &&
         !selected.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
     }

@@ -36,19 +36,14 @@ struct TripEditView: View {
                 }
 
                 Section {
+                    // The id is reconciled authoritatively in save() from the final
+                    // text (find-or-create), so retyping/clearing can't leave a
+                    // stale grouping and there's no create/save race.
                     ComboField(
                         placeholder: "Search or add a destination",
                         text: $destText,
                         options: destinationOptions,
-                        pickIcon: "mappin.and.ellipse",
-                        onPick: { opt in draft.destinationID = UUID(uuidString: opt.id) },
-                        onAdd: { name in
-                            Task {
-                                if let d = await trips.createDestination(familyID: draft.familyID, name: name) {
-                                    draft.destinationID = d.id
-                                }
-                            }
-                        })
+                        pickIcon: "mappin.and.ellipse")
                 } header: {
                     Text("Destination")
                 } footer: {
@@ -114,7 +109,19 @@ struct TripEditView: View {
     private func save() async {
         draft.departDate = hasDates ? departDate : nil
         draft.returnDate = hasDates ? returnDate : nil
-        draft.destination = destText.nilIfBlank
+        // Reconcile the destination grouping from the final text: match an
+        // existing destination (case-insensitive), else create it, else clear.
+        if let name = destText.nilIfBlank {
+            draft.destination = name
+            if let match = trips.destinations.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                draft.destinationID = match.id
+            } else {
+                draft.destinationID = await trips.createDestination(familyID: draft.familyID, name: name)?.id
+            }
+        } else {
+            draft.destination = nil
+            draft.destinationID = nil
+        }
         draft.travelers = travelers.isEmpty ? nil : travelers
         draft.budget = Double(budgetText.filter(\.isNumber))
         if draft.createdBy == nil { draft.createdBy = family.currentMember?.id }

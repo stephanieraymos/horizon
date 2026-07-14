@@ -248,6 +248,7 @@ private struct ExpenseEditView: View {
         draft.amount = total
         draft.category = category
         draft.spentOn = spentOn
+        if placeText.nilIfBlank == nil { draft.placeID = nil }  // don't keep a link to a cleared place
         if draft.loggedBy == nil { draft.loggedBy = family.currentMember?.id }
         let newSplits: [ExpenseSplit] = involved.compactMap { id in
             let amt = Double(shares[id] ?? "") ?? 0

@@ -33,7 +33,12 @@ struct TripsListView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else if upcoming.isEmpty && past.isEmpty {
-                    ContentUnavailableView.search
+                    if !search.isEmpty || statusFilter != nil {
+                        ContentUnavailableView.search
+                    } else {
+                        ContentUnavailableView("All your trips are Someday", systemImage: "map",
+                            description: Text("Dated trips show here; check the Someday tab for undated ideas."))
+                    }
                 } else {
                     List {
                         if !upcoming.isEmpty {

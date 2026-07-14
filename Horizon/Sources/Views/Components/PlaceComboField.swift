@@ -18,7 +18,13 @@ struct PlaceComboField: View {
                 .init(id: $0.id.uuidString, name: $0.name, icon: "mappin.and.ellipse", subtitle: $0.address)
             },
             pickIcon: "mappin.and.ellipse",
-            onPick: { opt in placeID = UUID(uuidString: opt.id) },
+            onPick: { opt in
+                guard let uid = UUID(uuidString: opt.id),
+                      let place = trips.places.first(where: { $0.id == uid }) else { return }
+                placeID = place.id
+                // Prefer the real street address for geocoding; keep the name otherwise.
+                if let addr = place.address?.nilIfBlank { text = addr }
+            },
             onAdd: { name in
                 guard let fid = family.familyID else { return }
                 Task { if let p = await trips.createPlace(familyID: fid, name: name) { placeID = p.id } }

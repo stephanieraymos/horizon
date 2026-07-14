@@ -24,15 +24,19 @@ struct ComboField: View {
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
 
+    // Not gated on @FocusState: gating there lets a tap on a suggestion resign
+    // first-responder and remove the row mid-tap (dropping the selection). Instead
+    // show while there's query text, and hide once the text is a committed value.
     private var matches: [Option] {
-        guard focused else { return [] }
         let q = trimmed.lowercased()
-        let filtered = q.isEmpty ? options : options.filter { $0.name.lowercased().contains(q) }
+        guard !q.isEmpty else { return [] }
+        let filtered = options.filter { $0.name.lowercased().contains(q) }
+        if filtered.count == 1 && filtered[0].name.caseInsensitiveCompare(trimmed) == .orderedSame { return [] }
         return Array(filtered.prefix(8))
     }
 
     private var showAdd: Bool {
-        focused && allowAdd && !trimmed.isEmpty &&
+        allowAdd && !trimmed.isEmpty &&
         !options.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
     }
 

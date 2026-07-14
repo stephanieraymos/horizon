@@ -115,11 +115,13 @@ private struct DestinationDetailView: View {
             }
         }
         .onDisappear {
-            if name != destination.name { Task { await trips.renameDestination(current, name: name) } }
-            if isWishlist != destination.isWishlist {
-                var d = current; d.isWishlist = isWishlist
-                Task { await trips.saveDestination(d) }
-            }
+            // Single write carrying BOTH edits, so a full-row upsert can't clobber
+            // the rename with a stale name.
+            guard name != destination.name || isWishlist != destination.isWishlist else { return }
+            var d = current
+            d.name = name.trimmingCharacters(in: .whitespaces).isEmpty ? current.name : name
+            d.isWishlist = isWishlist
+            Task { await trips.saveDestination(d) }
         }
         .confirmationDialog("Delete this destination?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {

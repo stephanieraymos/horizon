@@ -17,6 +17,8 @@ struct TripDetailView: View {
     @State private var showMemories = false
     @State private var showMoodBoard = false
     @State private var coverError: String?
+    @State private var calendarMessage: String?
+    @State private var calendarIsError = false
 
     init(trip: Trip) {
         self.trip = trip
@@ -101,6 +103,22 @@ struct TripDetailView: View {
             Button("Delete Trip", role: .destructive) {
                 Task { await trips.delete(current); dismiss() }
             }
+        }
+        .alert(calendarIsError ? "Couldn't add to Calendar" : "Added to Calendar",
+               isPresented: Binding(get: { calendarMessage != nil },
+                                    set: { if !$0 { calendarMessage = nil } })) {
+            Button("OK", role: .cancel) { calendarMessage = nil }
+        } message: { Text(calendarMessage ?? "") }
+    }
+
+    private func addToCalendar(_ res: Reservation) async {
+        do {
+            try await CalendarService.add(reservation: res, tripName: current.name)
+            calendarIsError = false
+            calendarMessage = "\(res.title.isEmpty ? res.type.label : res.title) was added to your calendar."
+        } catch {
+            calendarIsError = true
+            calendarMessage = error.localizedDescription
         }
     }
 
@@ -241,6 +259,11 @@ struct TripDetailView: View {
                             .onTapGesture { editingReservation = res }
                             .contextMenu {
                                 Button("Edit") { editingReservation = res }
+                                if res.startAt != nil {
+                                    Button("Add to Calendar", systemImage: "calendar.badge.plus") {
+                                        Task { await addToCalendar(res) }
+                                    }
+                                }
                                 Button("Delete", role: .destructive) {
                                     Task { await detail.deleteReservation(res) }
                                 }

@@ -46,5 +46,7 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+    <string>Horizon adds your trip reservations to your calendar so they show up alongside your other events.</string>
 </dict>
 </plist>

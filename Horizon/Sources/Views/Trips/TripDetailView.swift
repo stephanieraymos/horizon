@@ -49,6 +49,9 @@ struct TripDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Edit trip", systemImage: "pencil") { showEdit = true }
+                    Button("Duplicate trip", systemImage: "plus.square.on.square") {
+                        Task { await duplicate() }
+                    }
                     if current.isUpcoming, current.departDate != nil, TripLiveActivityManager.isSupported {
                         if TripLiveActivityManager.isRunning(tripName: current.name) {
                             Button("Stop Live Activity", systemImage: "stop.circle") {
@@ -246,6 +249,16 @@ struct TripDetailView: View {
     }
 
     // MARK: Helpers
+
+    private func duplicate() async {
+        let copy = Trip(familyID: current.familyID, name: current.name + " (copy)",
+                        destination: current.destination, destinationID: current.destinationID,
+                        travelers: current.travelers, transportation: current.transportation,
+                        status: .planning, budget: current.budget, placeID: current.placeID)
+        await trips.save(copy)
+        await detail.copyReusableItems(to: copy.id)
+        dismiss()
+    }
 
     private var destinationName: String? {
         trips.destination(for: current)?.name ?? current.destination?.nilIfBlank

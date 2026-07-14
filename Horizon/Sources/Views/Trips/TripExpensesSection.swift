@@ -53,11 +53,44 @@ struct TripExpensesSection: View {
                 Spacer()
                 Text(TripFormat.money(store.tripTotal) ?? "$0").font(.headline)
             }
+
+            if let budget = trip.budget, budget > 0 {
+                let frac = min(store.tripTotal / budget, 1)
+                let over = store.tripTotal > budget
+                ProgressView(value: frac)
+                    .tint(over ? .red : Theme.Colors.brand)
+                HStack {
+                    Text("\(TripFormat.money(store.tripTotal) ?? "$0") of \(TripFormat.money(budget) ?? "$0")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(over ? "Over by \(TripFormat.money(store.tripTotal - budget) ?? "")"
+                              : "\(TripFormat.money(budget - store.tripTotal) ?? "") left")
+                        .font(.caption).foregroundStyle(over ? .red : .secondary)
+                }
+            }
+
+            Divider()
             ForEach(store.perMemberTotals, id: \.memberID) { row in
                 HStack {
                     Text(family.memberName(id: row.memberID) ?? "Someone").font(.callout)
                     Spacer()
                     Text(TripFormat.money(row.amount) ?? "$0").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+
+            let transfers = store.settleUp()
+            if !transfers.isEmpty {
+                Divider()
+                Text("Settle up").font(.caption.bold()).foregroundStyle(.secondary)
+                ForEach(Array(transfers.enumerated()), id: \.offset) { _, t in
+                    HStack(spacing: 4) {
+                        Text(family.memberName(id: t.from) ?? "Someone").fontWeight(.medium)
+                        Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
+                        Text(family.memberName(id: t.to) ?? "Someone").fontWeight(.medium)
+                        Spacer()
+                        Text(TripFormat.money(t.amount) ?? "$0").foregroundStyle(Theme.Colors.brand)
+                    }
+                    .font(.callout)
                 }
             }
         }

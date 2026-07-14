@@ -260,6 +260,32 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Copies the reusable sub-items (packing, shopping list, itinerary) to a new
+    /// trip — checks/statuses reset. Reservations & expenses are trip-specific and
+    /// not copied.
+    func copyReusableItems(to newTripID: UUID) async {
+        let newPacking = packing.map {
+            PackingItem(tripID: newTripID, memberID: $0.memberID, item: $0.item,
+                        checked: false, autoSuggested: $0.autoSuggested, category: $0.category)
+        }
+        if !newPacking.isEmpty { try? await supabase.from("fam_trip_packing").insert(newPacking).execute() }
+
+        let newPurchases = purchases.map {
+            TripPurchase(familyID: $0.familyID, tripID: newTripID, name: $0.name,
+                         amountCents: $0.amountCents, status: .notPurchased, tag: $0.tag,
+                         purchasedFrom: $0.purchasedFrom)
+        }
+        if !newPurchases.isEmpty { try? await supabase.from("fam_trip_purchases").insert(newPurchases).execute() }
+
+        let newDays = itinerary.map { day -> ItineraryDay in
+            ItineraryDay(tripID: newTripID, dayDate: day.dayDate,
+                         activities: day.activities.map { act in
+                             var a = act; a.id = UUID(); a.done = false; return a
+                         })
+        }
+        if !newDays.isEmpty { try? await supabase.from("fam_trip_itinerary").insert(newDays).execute() }
+    }
+
     var tripTotal: Double { expenses.reduce(0) { $0 + $1.amount } }
 
     /// Per-member owed totals across all splits.
@@ -267,5 +293,31 @@ final class TripDetailStore {
         Dictionary(grouping: splits, by: \.memberID)
             .map { (memberID: $0.key, amount: $0.value.reduce(0) { $0 + $1.amount }) }
             .sorted { $0.amount > $1.amount }
+    }
+
+    /// Who-owes-whom: nets each member's paid vs. their split share, then greedily
+    /// matches debtors to creditors into the fewest transfers.
+    func settleUp() -> [(from: UUID, to: UUID, amount: Double)] {
+        var paid: [UUID: Double] = [:]
+        for e in expenses { if let p = e.paidBy { paid[p, default: 0] += e.amount } }
+        var owes: [UUID: Double] = [:]
+        for s in splits { owes[s.memberID, default: 0] += s.amount }
+
+        let ids = Set(paid.keys).union(owes.keys)
+        var creditors = ids.map { (id: $0, amt: (paid[$0] ?? 0) - (owes[$0] ?? 0)) }
+            .filter { $0.amt > 0.01 }.sorted { $0.amt > $1.amt }
+        var debtors = ids.map { (id: $0, amt: (owes[$0] ?? 0) - (paid[$0] ?? 0)) }
+            .filter { $0.amt > 0.01 }.sorted { $0.amt > $1.amt }
+
+        var transfers: [(from: UUID, to: UUID, amount: Double)] = []
+        var ci = 0, di = 0
+        while ci < creditors.count && di < debtors.count {
+            let pay = min(creditors[ci].amt, debtors[di].amt)
+            transfers.append((from: debtors[di].id, to: creditors[ci].id, amount: pay))
+            creditors[ci].amt -= pay; debtors[di].amt -= pay
+            if creditors[ci].amt < 0.01 { ci += 1 }
+            if debtors[di].amt < 0.01 { di += 1 }
+        }
+        return transfers
     }
 }

@@ -35,6 +35,10 @@ struct TripDetailView: View {
                 if !passportWarnings.isEmpty { passportCallout }
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
+                TripWeatherSection(
+                    destinationName: trips.destination(for: current)?.name ?? current.destination,
+                    departDate: current.departDate,
+                    returnDate: current.returnDate)
                 if current.isSomeday { somedayCallout }
                 reservationsSection
                 itinerarySection

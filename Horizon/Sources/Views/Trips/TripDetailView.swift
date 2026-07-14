@@ -21,6 +21,7 @@ struct TripDetailView: View {
     @State private var calendarMessage: String?
     @State private var calendarIsError = false
     @State private var showPasteReservation = false
+    @State private var showCoverCrop = false
 
     init(trip: Trip) {
         self.trip = trip
@@ -40,9 +41,8 @@ struct TripDetailView: View {
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
                 TripWeatherSection(
-                    destinationName: trips.destination(for: current)?.name ?? current.destination,
-                    departDate: current.departDate,
-                    returnDate: current.returnDate)
+                    trip: current,
+                    destinationName: trips.destination(for: current)?.name ?? current.destination)
                 if current.isSomeday { somedayCallout }
                 reservationsSection
                 itinerarySection
@@ -68,6 +68,12 @@ struct TripDetailView: View {
                     }
                     Button("Mood Board", systemImage: "square.grid.2x2") { showMoodBoard = true }
                     Button("Memories", systemImage: "photo.on.rectangle.angled") { showMemories = true }
+                    if current.coverPhotoURL?.nilIfBlank != nil {
+                        Button("Adjust cover crop", systemImage: "crop") { showCoverCrop = true }
+                        Button("Remove cover photo", systemImage: "photo") {
+                            Task { await trips.clearTripCover(tripID: current.id) }
+                        }
+                    }
                     if current.isUpcoming, current.departDate != nil, TripLiveActivityManager.isSupported {
                         if TripLiveActivityManager.isRunning(tripName: current.name) {
                             Button("Stop Live Activity", systemImage: "stop.circle") {
@@ -110,6 +116,7 @@ struct TripDetailView: View {
         .sheet(isPresented: $showMoodBoard) {
             TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
         }
+        .sheet(isPresented: $showCoverCrop) { CoverCropView(trip: current) }
         .sheet(isPresented: $showPasteReservation) {
             PasteReservationSheet(familyID: current.familyID, tripID: current.id, onReview: { parsed in
                 // Let the paste sheet finish dismissing before presenting the editor.
@@ -198,16 +205,32 @@ struct TripDetailView: View {
 
     private var coverBanner: some View {
         PhotosPicker(selection: $coverItem, matching: .images) {
-            CoverImage(cover: current.coverPhotoURL) {
-                ZStack {
-                    LinearGradient(colors: [Theme.Colors.brand.opacity(0.35), Theme.Colors.brand.opacity(0.15)],
-                                   startPoint: .top, endPoint: .bottom)
-                    Label("Add cover photo", systemImage: "photo.badge.plus").foregroundStyle(.white)
+            Group {
+                if current.coverPhotoURL?.nilIfBlank != nil {
+                    AdjustableCoverImage(cover: current.coverPhotoURL,
+                                         focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY)) {
+                        Color.secondary.opacity(0.12)
+                    }
+                } else {
+                    ZStack {
+                        LinearGradient(colors: [Theme.Colors.brand.opacity(0.35), Theme.Colors.brand.opacity(0.15)],
+                                       startPoint: .top, endPoint: .bottom)
+                        Label("Add cover photo", systemImage: "photo.badge.plus").foregroundStyle(.white)
+                    }
                 }
             }
             .frame(height: 170)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(alignment: .bottomTrailing) {
+                if current.coverPhotoURL?.nilIfBlank != nil {
+                    Label("Change", systemImage: "camera.fill")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(10)
+                }
+            }
         }
         .buttonStyle(.plain)
         .onChange(of: coverItem) { _, item in

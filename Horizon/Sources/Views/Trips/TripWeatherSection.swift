@@ -4,9 +4,10 @@ import SwiftUI
 /// Open-Meteo; the forecast only reaches ~16 days out, so further-off trips get
 /// a friendly "check back closer" note instead.
 struct TripWeatherSection: View {
+    let trip: Trip
     let destinationName: String?
-    let departDate: Date?
-    let returnDate: Date?
+
+    @Environment(TripsStore.self) private var trips
 
     @State private var days: [DailyWeather] = []
     @State private var resolvedName: String?
@@ -15,6 +16,11 @@ struct TripWeatherSection: View {
     enum Phase { case idle, loading, tooFar, empty, loaded }
 
     private var destination: String? { destinationName?.nilIfBlank }
+    private var departDate: Date? { trip.departDate }
+    private var returnDate: Date? { trip.returnDate }
+
+    /// How long a cached forecast is trusted before re-fetching.
+    private let cacheTTL: TimeInterval = 6 * 3600
 
     var body: some View {
         if let destination, let depart = departDate {
@@ -28,7 +34,7 @@ struct TripWeatherSection: View {
                 }
                 content
             }
-            .task(id: "\(destination)|\(depart.timeIntervalSince1970)") {
+            .task(id: "\(destination)|\(depart.timeIntervalSince1970)|\(returnDate?.timeIntervalSince1970 ?? 0)") {
                 await load(destination: destination, depart: depart)
             }
         }
@@ -88,14 +94,35 @@ struct TripWeatherSection: View {
 
         guard departDay <= windowEnd else { phase = .tooFar; return }
 
+        let start = max(today, departDay)
+        let end = min(cal.startOfDay(for: returnDate ?? depart), windowEnd)
+        let key = cacheKey(destination: destination, start: start, end: end)
+
+        // Fresh cache for the same destination + range? Use it, no network.
+        if let cache = trip.weatherCache, cache.key == key,
+           Date().timeIntervalSince(cache.fetchedAt) < cacheTTL, !cache.days.isEmpty {
+            resolvedName = cache.resolvedName
+            days = cache.daily
+            phase = .loaded
+            return
+        }
+
         guard let geo = await WeatherService.geocode(destination) else { phase = .empty; return }
         resolvedName = geo.name
 
-        let start = max(today, departDay)
-        let end = min(cal.startOfDay(for: returnDate ?? depart), windowEnd)
         let result = await WeatherService.dailyForecast(latitude: geo.latitude, longitude: geo.longitude,
                                                         start: start, end: max(start, end))
         days = result
         phase = result.isEmpty ? .empty : .loaded
+
+        if !result.isEmpty {
+            let cache = WeatherCache(key: key, resolvedName: geo.name, fetchedAt: Date(), from: result)
+            await trips.saveWeatherCache(tripID: trip.id, cache: cache)
+        }
+    }
+
+    private func cacheKey(destination: String, start: Date, end: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+        return "\(destination.lowercased())|\(f.string(from: start))|\(f.string(from: end))"
     }
 }

@@ -227,6 +227,34 @@ final class TripsStore {
         } catch { errorMessage = error.localizedDescription; return false }
     }
 
+    /// Persists the framing focal point for a trip's cover photo.
+    func saveCoverFocus(tripID: UUID, x: Double, y: Double) async {
+        struct P: Encodable { let cover_focus_x: Double; let cover_focus_y: Double }
+        do {
+            try await supabase.from("fam_trips").update(P(cover_focus_x: x, cover_focus_y: y)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverFocusX = x; trips[i].coverFocusY = y }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Writes the cached forecast onto the trip row.
+    func saveWeatherCache(tripID: UUID, cache: WeatherCache) async {
+        struct P: Encodable { let weather_cache: WeatherCache }
+        do {
+            try await supabase.from("fam_trips").update(P(weather_cache: cache)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].weatherCache = cache }
+        } catch { /* non-fatal — caching is best-effort */ }
+    }
+
+    /// Clears a trip's cover photo (the storage object is left; the row just
+    /// stops pointing at it).
+    func clearTripCover(tripID: UUID) async {
+        struct P: Encodable { let cover_photo_url: String? }
+        do {
+            try await supabase.from("fam_trips").update(P(cover_photo_url: nil)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverPhotoURL = nil }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func setDestinationCover(id: UUID, familyID: UUID, imageData: Data) async {
         let path = "\(familyID.uuidString.lowercased())/covers/dest-\(id.uuidString.lowercased())-\(UUID().uuidString.lowercased()).jpg"
         struct P: Encodable { let cover_photo_url: String }

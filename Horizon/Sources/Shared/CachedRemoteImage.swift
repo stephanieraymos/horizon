@@ -35,6 +35,69 @@ enum HorizonImageLoader {
                                    diskCapacity: 500_000_000,    // 500 MB
                                    directory: nil)
     }
+
+    /// Loads a cover image (http URL or private Storage path) as a UIImage via
+    /// the same caches the cached-image views use. For focal-point framing where
+    /// the raw pixels are needed.
+    static func loadCover(_ cover: String) async -> UIImage? {
+        if cover.hasPrefix("http") {
+            guard let url = URL(string: cover) else { return nil }
+            if let c = memory.object(forKey: url as NSURL) { return c }
+            guard let (data, _) = try? await session.data(from: url), let ui = UIImage(data: data) else { return nil }
+            memory.setObject(ui, forKey: url as NSURL)
+            return ui
+        } else {
+            guard let key = NSURL(string: "trip-docs:///\(cover)") else { return nil }
+            if let c = memory.object(forKey: key) { return c }
+            guard let url = try? await StorageService.signedURL(path: cover),
+                  let (data, _) = try? await session.data(from: url), let ui = UIImage(data: data) else { return nil }
+            memory.setObject(ui, forKey: key)
+            return ui
+        }
+    }
+}
+
+/// Cover image rendered aspect-fill, positioned to a focal point (0..1) so the
+/// banner can be re-framed without re-cropping the source.
+struct AdjustableCoverImage<Placeholder: View>: View {
+    let cover: String?
+    var focus: UnitPoint = .center
+    @ViewBuilder var placeholder: () -> Placeholder
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        GeometryReader { geo in
+            if let image {
+                let l = Self.layout(imageSize: image.size, frame: geo.size, focus: focus)
+                Image(uiImage: image).resizable()
+                    .frame(width: l.size.width, height: l.size.height)
+                    .offset(x: l.offset.x, y: l.offset.y)
+            } else {
+                placeholder()
+            }
+        }
+        .clipped()
+        .task(id: cover) {
+            image = nil
+            if let c = cover?.nilIfBlank { image = await HorizonImageLoader.loadCover(c) }
+        }
+    }
+
+    /// Aspect-fill size + offset that places `focus` at the frame's center.
+    static func layout(imageSize: CGSize, frame: CGSize, focus: UnitPoint)
+        -> (size: CGSize, offset: CGPoint) {
+        guard imageSize.width > 0, imageSize.height > 0, frame.width > 0, frame.height > 0 else {
+            return (frame, .zero)
+        }
+        let scale = max(frame.width / imageSize.width, frame.height / imageSize.height)
+        let scaled = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let overflow = CGSize(width: scaled.width - frame.width, height: scaled.height - frame.height)
+        // focus 0 → show the leading/top edge; 0.5 → centered; 1 → trailing/bottom.
+        let offX = (0.5 - focus.x) * overflow.width
+        let offY = (0.5 - focus.y) * overflow.height
+        return (scaled, CGPoint(x: offX, y: offY))
+    }
 }
 
 struct CachedRemoteImage<Placeholder: View>: View {

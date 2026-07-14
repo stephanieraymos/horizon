@@ -50,6 +50,11 @@ struct Trip: Codable, Identifiable, Hashable {
     /// Rich-text notes document. Decode-only here; saved via TripsStore.saveTripNotes
     /// so a plain trip upsert never clobbers it.
     var notesContent: [ContentBlock]?
+    /// Cover framing focal point (0..1). Center by default.
+    var coverFocusX: Double = 0.5
+    var coverFocusY: Double = 0.5
+    /// Cached weather. Decode-only; saved via TripsStore.saveWeatherCache.
+    var weatherCache: WeatherCache?
 
     // MARK: Derived
 
@@ -116,6 +121,9 @@ struct Trip: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case notesContent = "notes_content"
+        case coverFocusX = "cover_focus_x"
+        case coverFocusY = "cover_focus_y"
+        case weatherCache = "weather_cache"
     }
 
     init(id: UUID = UUID(), familyID: UUID, name: String, destination: String? = nil,
@@ -152,6 +160,9 @@ struct Trip: Codable, Identifiable, Hashable {
         createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
         notesContent  = try c.decodeIfPresent([ContentBlock].self, forKey: .notesContent)
+        coverFocusX   = try c.decodeIfPresent(Double.self, forKey: .coverFocusX) ?? 0.5
+        coverFocusY   = try c.decodeIfPresent(Double.self, forKey: .coverFocusY) ?? 0.5
+        weatherCache  = try c.decodeIfPresent(WeatherCache.self, forKey: .weatherCache)
     }
 
     /// Encodes only the writable columns (for upsert). Timestamps and created_by

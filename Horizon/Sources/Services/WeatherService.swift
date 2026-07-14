@@ -41,6 +41,35 @@ struct DailyWeather: Identifiable, Hashable {
     }
 }
 
+/// Persisted forecast cache stored on the trip row (`fam_trips.weather_cache`),
+/// so the strip doesn't re-fetch on every view.
+struct WeatherCache: Codable, Hashable {
+    /// destination|startDate|endDate — invalidated when any of these change.
+    var key: String
+    var resolvedName: String
+    var fetchedAt: Date
+    var days: [Day]
+
+    struct Day: Codable, Hashable {
+        var date: Date
+        var tempMax: Double
+        var tempMin: Double
+        var precip: Int?
+        var code: Int
+    }
+
+    var daily: [DailyWeather] {
+        days.map { DailyWeather(date: $0.date, tempMax: $0.tempMax, tempMin: $0.tempMin,
+                                precipProbability: $0.precip, code: $0.code) }
+    }
+
+    init(key: String, resolvedName: String, fetchedAt: Date, from daily: [DailyWeather]) {
+        self.key = key; self.resolvedName = resolvedName; self.fetchedAt = fetchedAt
+        self.days = daily.map { .init(date: $0.date, tempMax: $0.tempMax, tempMin: $0.tempMin,
+                                      precip: $0.precipProbability, code: $0.code) }
+    }
+}
+
 /// Keyless weather via Open-Meteo (free, no API key, no Supabase egress).
 /// Geocodes a destination name, then fetches the daily forecast for a date
 /// range. Forecast only covers ~16 days ahead, so callers guard on that.

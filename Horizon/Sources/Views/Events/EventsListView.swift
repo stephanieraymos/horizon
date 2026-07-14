@@ -95,17 +95,21 @@ struct EventsListView: View {
                                                          set: { if !$0 { makeEventFor = nil } }),
                                     presenting: makeEventFor) { event in
                     Button("Create a trip") { Task { await createTrip(from: event) } }
-                    Button("Link an existing trip") {
-                        let e = event
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 300_000_000)
-                            linkingEvent = e
+                    if !isSynthetic(event) {
+                        Button("Link an existing trip") {
+                            let e = event
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                linkingEvent = e
+                            }
                         }
+                        Button("Edit countdown") { editing = event }
                     }
-                    if canEdit { Button("Edit countdown") { editing = event } }
                     Button("Cancel", role: .cancel) {}
                 } message: { event in
-                    Text("Link “\(event.title)” to a trip so tapping it opens the trip.")
+                    Text(isSynthetic(event)
+                         ? "Plan a trip around \(event.title)?"
+                         : "Link “\(event.title)” to a trip so tapping it opens the trip.")
                 }
         }
     }
@@ -113,17 +117,29 @@ struct EventsListView: View {
     private func tap(_ event: FamilyEvent, synthetic: Bool) {
         if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
             showingTrip = trip
-        } else if canEdit && !synthetic {
+        } else if canEdit {
+            // Birthdays are treated the same — you can make a trip out of one.
             makeEventFor = event
         }
     }
 
     private func createTrip(from event: FamilyEvent) async {
         guard let familyID = family.familyID else { return }
-        let trip = Trip(familyID: familyID, name: event.title, departDate: event.eventDate,
+        // Annual events (birthdays) count down to the next occurrence — use that
+        // as the trip date, not the original (possibly long-past) date.
+        let date = event.isAnnual ? event.nextOccurrenceDate : event.eventDate
+        let trip = Trip(familyID: familyID, name: event.title, departDate: date,
                         status: .planning, createdBy: family.currentMember?.id)
         await trips.save(trip)
-        await events.linkTrip(event, tripID: trip.id)
+        if isSynthetic(event) {
+            // Synthetic birthdays have no fam_events row to link; give the new
+            // trip its own countdown instead.
+            await events.syncCountdown(forTripID: trip.id, familyID: familyID,
+                                       name: trip.name, departDate: date,
+                                       createdBy: family.currentMember?.userID)
+        } else {
+            await events.linkTrip(event, tripID: trip.id)
+        }
         try? await Task.sleep(nanoseconds: 300_000_000)
         showingTrip = trips.trips.first { $0.id == trip.id } ?? trip
     }

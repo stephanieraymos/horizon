@@ -3,10 +3,12 @@ import SwiftUI
 struct TripsListView: View {
     @Environment(TripsStore.self) private var trips
     @Environment(FamilyStore.self) private var family
+    @Environment(EventsStore.self) private var events
     @State private var showNewTrip = false
     @State private var search = ""
     @State private var statusFilter: TripStatus?
     @State private var manageSheet: ManageSheet?
+    @State private var showArchived = false
 
     private enum ManageSheet: Int, Identifiable { case destinations, places; var id: Int { rawValue } }
 
@@ -22,6 +24,18 @@ struct TripsListView: View {
 
     private var upcoming: [Trip] { trips.upcoming.filter(matches) }
     private var past: [Trip] { trips.past.filter(matches) }
+    private var archived: [Trip] { trips.archivedTrips.filter(matches) }
+
+    private func archive(_ trip: Trip) async {
+        await events.deleteForTrip(trip.id)
+        await trips.setArchived(trip, true)
+    }
+    private func restore(_ trip: Trip) async {
+        await trips.setArchived(trip, false)
+        await events.syncCountdown(forTripID: trip.id, familyID: trip.familyID,
+                                   name: trip.name, departDate: trip.departDate,
+                                   createdBy: family.currentMember?.userID)
+    }
 
     var body: some View {
         NavigationStack {
@@ -35,7 +49,7 @@ struct TripsListView: View {
                         Button("New Trip") { showNewTrip = true }
                             .buttonStyle(.borderedProminent)
                     }
-                } else if upcoming.isEmpty && past.isEmpty {
+                } else if upcoming.isEmpty && past.isEmpty && archived.isEmpty {
                     if !search.isEmpty || statusFilter != nil {
                         ContentUnavailableView.search
                     } else {
@@ -45,10 +59,51 @@ struct TripsListView: View {
                 } else {
                     List {
                         if !upcoming.isEmpty {
-                            Section("Upcoming") { ForEach(upcoming) { TripRow(trip: $0) } }
+                            Section("Upcoming") {
+                                ForEach(upcoming) { trip in
+                                    TripRow(trip: trip).swipeActions(edge: .trailing) {
+                                        Button { Task { await archive(trip) } } label: {
+                                            Label("Not going", systemImage: "xmark.bin")
+                                        }.tint(.orange)
+                                    }
+                                }
+                            }
                         }
                         if !past.isEmpty {
-                            Section("Past") { ForEach(past) { TripRow(trip: $0) } }
+                            Section("Past") {
+                                ForEach(past) { trip in
+                                    TripRow(trip: trip).swipeActions(edge: .trailing) {
+                                        Button { Task { await archive(trip) } } label: {
+                                            Label("Not going", systemImage: "xmark.bin")
+                                        }.tint(.orange)
+                                    }
+                                }
+                            }
+                        }
+                        if !archived.isEmpty {
+                            Section {
+                                if showArchived {
+                                    ForEach(archived) { trip in
+                                        TripRow(trip: trip).swipeActions(edge: .trailing) {
+                                            Button { Task { await restore(trip) } } label: {
+                                                Label("Restore", systemImage: "arrow.uturn.backward")
+                                            }.tint(Theme.Colors.brand)
+                                        }
+                                    }
+                                }
+                            } header: {
+                                Button {
+                                    withAnimation { showArchived.toggle() }
+                                } label: {
+                                    HStack {
+                                        Text("Not going (\(archived.count))")
+                                        Spacer()
+                                        Image(systemName: showArchived ? "chevron.down" : "chevron.right")
+                                            .font(.caption)
+                                    }
+                                }
+                                .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }

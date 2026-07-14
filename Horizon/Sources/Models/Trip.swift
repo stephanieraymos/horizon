@@ -42,6 +42,8 @@ struct Trip: Codable, Identifiable, Hashable {
     var status: TripStatus
     var budget: Double?
     var placeID: UUID?
+    /// "Not going" — hidden from the main lists, restorable.
+    var archived: Bool
     var createdBy: UUID?
     var createdAt: Date?
     var updatedAt: Date?
@@ -109,6 +111,7 @@ struct Trip: Codable, Identifiable, Hashable {
         case coverPhotoURL = "cover_photo_url"
         case transportation, status, budget
         case placeID = "place_id"
+        case archived
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -119,13 +122,14 @@ struct Trip: Codable, Identifiable, Hashable {
          destinationID: UUID? = nil, departDate: Date? = nil, returnDate: Date? = nil,
          travelers: [String]? = nil, coverPhotoURL: String? = nil, transportation: String? = nil,
          status: TripStatus = .planning, budget: Double? = nil, placeID: UUID? = nil,
-         createdBy: UUID? = nil) {
+         archived: Bool = false, createdBy: UUID? = nil) {
         self.id = id; self.familyID = familyID; self.name = name
         self.destination = destination; self.destinationID = destinationID
         self.departDate = departDate; self.returnDate = returnDate
         self.travelers = travelers; self.coverPhotoURL = coverPhotoURL
         self.transportation = transportation; self.status = status
-        self.budget = budget; self.placeID = placeID; self.createdBy = createdBy
+        self.budget = budget; self.placeID = placeID; self.archived = archived
+        self.createdBy = createdBy
     }
 
     init(from decoder: Decoder) throws {
@@ -143,6 +147,7 @@ struct Trip: Codable, Identifiable, Hashable {
         status        = (try? c.decode(TripStatus.self, forKey: .status)) ?? .planning
         budget        = try c.decodeIfPresent(Double.self, forKey: .budget)
         placeID       = try c.decodeIfPresent(UUID.self, forKey: .placeID)
+        archived      = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
         createdBy     = try c.decodeIfPresent(UUID.self, forKey: .createdBy)
         createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
@@ -168,5 +173,6 @@ struct Trip: Codable, Identifiable, Hashable {
         try c.encode(status, forKey: .status)
         try c.encodeIfPresent(budget, forKey: .budget)
         try c.encodeIfPresent(placeID, forKey: .placeID)
+        try c.encode(archived, forKey: .archived)
     }
 }

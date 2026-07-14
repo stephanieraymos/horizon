@@ -79,6 +79,15 @@ struct TripDetailView: View {
                             }
                         }
                     }
+                    if current.archived {
+                        Button("Restore trip", systemImage: "arrow.uturn.backward") {
+                            Task { await restore() }
+                        }
+                    } else {
+                        Button("Mark as not going", systemImage: "xmark.bin") {
+                            Task { await archive() }
+                        }
+                    }
                     Button("Delete trip", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
@@ -122,6 +131,21 @@ struct TripDetailView: View {
                                     set: { if !$0 { calendarMessage = nil } })) {
             Button("OK", role: .cancel) { calendarMessage = nil }
         } message: { Text(calendarMessage ?? "") }
+    }
+
+    /// "Not going": archive the trip and drop its countdown.
+    private func archive() async {
+        await events.deleteForTrip(current.id)
+        await trips.setArchived(current, true)
+        dismiss()
+    }
+
+    private func restore() async {
+        await trips.setArchived(current, false)
+        // Rebuild the countdown for a dated trip.
+        await events.syncCountdown(forTripID: current.id, familyID: current.familyID,
+                                   name: current.name, departDate: current.departDate,
+                                   createdBy: family.currentMember?.userID)
     }
 
     private func addToCalendar(_ res: Reservation) async {

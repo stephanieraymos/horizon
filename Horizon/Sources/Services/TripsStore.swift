@@ -154,17 +154,31 @@ final class TripsStore {
     // MARK: Derived collections
 
     var upcoming: [Trip] {
-        trips.filter(\.isUpcoming)
+        trips.filter { $0.isUpcoming && !$0.archived }
             .sorted { ($0.departDate ?? .distantFuture) < ($1.departDate ?? .distantFuture) }
     }
 
     var past: [Trip] {
-        trips.filter(\.isPast)
+        trips.filter { $0.isPast && !$0.archived }
             .sorted { ($0.departDate ?? .distantPast) > ($1.departDate ?? .distantPast) }
     }
 
     var somedayTrips: [Trip] {
-        trips.filter(\.isSomeday).sorted { $0.name < $1.name }
+        trips.filter { $0.isSomeday && !$0.archived }.sorted { $0.name < $1.name }
+    }
+
+    var archivedTrips: [Trip] {
+        trips.filter(\.archived)
+            .sorted { ($0.departDate ?? .distantPast) > ($1.departDate ?? .distantPast) }
+    }
+
+    /// Marks a trip "not going" (or restores it). Persists just the flag.
+    func setArchived(_ trip: Trip, _ archived: Bool) async {
+        struct P: Encodable { let archived: Bool }
+        do {
+            try await supabase.from("fam_trips").update(P(archived: archived)).eq("id", value: trip.id).execute()
+            if let i = trips.firstIndex(where: { $0.id == trip.id }) { trips[i].archived = archived }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     var wishlistDestinations: [Destination] {

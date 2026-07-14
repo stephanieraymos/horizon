@@ -82,6 +82,9 @@ private struct PurchaseRow: View {
                         } else if let from = item.purchasedFrom?.nilIfBlank {
                             Text(from).font(.caption2).foregroundStyle(.secondary)
                         }
+                        if let notes = item.notes?.nilIfBlank {
+                            Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+                        }
                     }
                     Spacer()
                     if let amt = TripFormat.money(item.amountDollars) {
@@ -148,6 +151,13 @@ private struct PurchaseEditView: View {
                         #if !targetEnvironment(macCatalyst)
                         .textInputAutocapitalization(.never)
                         #endif
+                }
+
+                Section("Notes") {
+                    TextField("Paste model, item #, specs…", text: Binding(
+                        get: { draft.notes ?? "" }, set: { draft.notes = $0.nilIfBlank }),
+                        axis: .vertical)
+                        .lineLimit(2...8)
                 }
             }
             .navigationTitle(draft.name.isEmpty ? "New Item" : "Edit Item")

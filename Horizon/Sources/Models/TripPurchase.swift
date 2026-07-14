@@ -34,9 +34,11 @@ struct TripPurchase: Codable, Identifiable, Hashable {
     var status: PurchaseStatus
     var tag: String?
     var purchasedFrom: String?
+    var link: String?
     var notes: String?
 
     var amountDollars: Double? { amountCents.map { Double($0) / 100 } }
+    var linkURL: URL? { link?.nilIfBlank.flatMap(URL.init) }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -47,15 +49,15 @@ struct TripPurchase: Codable, Identifiable, Hashable {
         case purchaseDate = "purchase_date"
         case status, tag
         case purchasedFrom = "purchased_from"
-        case notes
+        case link, notes
     }
 
     init(id: UUID = UUID(), familyID: UUID, tripID: UUID?, name: String = "",
          amountCents: Int? = nil, purchaseDate: Date? = nil, status: PurchaseStatus = .notPurchased,
-         tag: String? = nil, purchasedFrom: String? = nil) {
+         tag: String? = nil, purchasedFrom: String? = nil, link: String? = nil) {
         self.id = id; self.familyID = familyID; self.tripID = tripID; self.name = name
         self.amountCents = amountCents; self.purchaseDate = purchaseDate; self.status = status
-        self.tag = tag; self.purchasedFrom = purchasedFrom
+        self.tag = tag; self.purchasedFrom = purchasedFrom; self.link = link
     }
 
     init(from decoder: Decoder) throws {
@@ -69,6 +71,7 @@ struct TripPurchase: Codable, Identifiable, Hashable {
         status = (try? c.decode(PurchaseStatus.self, forKey: .status)) ?? .notPurchased
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
         purchasedFrom = try c.decodeIfPresent(String.self, forKey: .purchasedFrom)
+        link = try c.decodeIfPresent(String.self, forKey: .link)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
     }
 
@@ -83,6 +86,7 @@ struct TripPurchase: Codable, Identifiable, Hashable {
         try c.encode(status, forKey: .status)
         try c.encodeIfPresent(tag, forKey: .tag)
         try c.encodeIfPresent(purchasedFrom, forKey: .purchasedFrom)
+        try c.encodeIfPresent(link, forKey: .link)
         try c.encodeIfPresent(notes, forKey: .notes)
     }
 }

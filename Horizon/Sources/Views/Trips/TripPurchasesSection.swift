@@ -39,7 +39,7 @@ struct TripPurchasesSection: View {
                         Text(group.tag).font(.subheadline.bold()).foregroundStyle(.secondary)
                         ForEach(group.items) { item in
                             PurchaseRow(item: item,
-                                        onToggle: { Task { await store.cyclePurchase(item) } },
+                                        onToggle: { Task { await store.togglePurchased(item) } },
                                         onEdit: { editing = item })
                                 .contextMenu {
                                     Button("Edit") { editing = item }
@@ -91,6 +91,11 @@ private struct PurchaseRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            if let url = item.linkURL {
+                Link(destination: url) { Image(systemName: "link").font(.caption) }
+                    .buttonStyle(.plain).foregroundStyle(Theme.Colors.brand)
+            }
         }
         .padding(.vertical, 3)
     }
@@ -136,6 +141,13 @@ private struct PurchaseEditView: View {
                         #endif
                     TextField("From (store / site)", text: Binding(
                         get: { draft.purchasedFrom ?? "" }, set: { draft.purchasedFrom = $0.nilIfBlank }))
+                    TextField("Link (product URL)", text: Binding(
+                        get: { draft.link ?? "" }, set: { draft.link = $0.nilIfBlank }))
+                        .textContentType(.URL)
+                        .autocorrectionDisabled()
+                        #if !targetEnvironment(macCatalyst)
+                        .textInputAutocapitalization(.never)
+                        #endif
                 }
             }
             .navigationTitle(draft.name.isEmpty ? "New Item" : "Edit Item")

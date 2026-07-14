@@ -52,10 +52,11 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    /// Optimistic status cycle (To buy → In cart → Purchased → …).
-    func cyclePurchase(_ p: TripPurchase) async {
+    /// Tapping an item checks it off as Purchased (or back to To buy). "In cart"
+    /// is a deliberate choice set in the editor, not part of the quick toggle.
+    func togglePurchased(_ p: TripPurchase) async {
         var updated = p
-        updated.status = p.status.next
+        updated.status = (p.status == .purchased) ? .notPurchased : .purchased
         if let idx = purchases.firstIndex(where: { $0.id == p.id }) { purchases[idx] = updated }
         do {
             try await supabase.from("fam_trip_purchases")

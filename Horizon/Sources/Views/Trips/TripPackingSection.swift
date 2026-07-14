@@ -2,11 +2,14 @@ import SwiftUI
 
 struct TripPackingSection: View {
     let store: TripDetailStore
+    var travelerNames: [String] = []
     @Environment(FamilyStore.self) private var family
     @Environment(TripsStore.self) private var trips
     @State private var grouping: Grouping = .person
     @State private var showAdd = false
     @State private var showManageCategories = false
+    @State private var showApplyTemplate = false
+    @State private var showSaveTemplate = false
 
     enum Grouping: String, CaseIterable { case person = "Person", category = "Category" }
 
@@ -17,6 +20,10 @@ struct TripPackingSection: View {
                 Spacer()
                 Menu {
                     Button("Add item", systemImage: "plus") { showAdd = true }
+                    Button("Apply template", systemImage: "suitcase") { showApplyTemplate = true }
+                    if !store.packing.isEmpty {
+                        Button("Save list as template", systemImage: "square.and.arrow.down") { showSaveTemplate = true }
+                    }
                     Button("Manage categories", systemImage: "tag") { showManageCategories = true }
                 } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                     .tint(Theme.Colors.brand)
@@ -52,6 +59,12 @@ struct TripPackingSection: View {
         }
         .sheet(isPresented: $showAdd) { PackingAddView(store: store) }
         .sheet(isPresented: $showManageCategories) { ManageCategoriesView() }
+        .sheet(isPresented: $showApplyTemplate) {
+            ApplyTemplateSheet(store: store, travelerNames: travelerNames)
+        }
+        .sheet(isPresented: $showSaveTemplate) {
+            SaveAsTemplateSheet(packing: store.packing)
+        }
     }
 
     private var groups: [(title: String, icon: String, items: [PackingItem])] {

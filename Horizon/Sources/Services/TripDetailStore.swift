@@ -181,6 +181,28 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Applies a template's items to this trip for each member in `memberIDs`,
+    /// skipping items a member already has (case-insensitive name match). Returns
+    /// the number of rows added.
+    @discardableResult
+    func applyTemplate(items templateItems: [(item: String, category: String?)],
+                       to memberIDs: [UUID]) async -> Int {
+        guard !templateItems.isEmpty, !memberIDs.isEmpty else { return 0 }
+        var rows: [PackingItem] = []
+        for memberID in memberIDs {
+            let existing = Set(packing.filter { $0.memberID == memberID }.map { $0.item.lowercased() })
+            for t in templateItems where !existing.contains(t.item.lowercased()) {
+                rows.append(PackingItem(tripID: tripID, memberID: memberID, item: t.item, category: t.category))
+            }
+        }
+        guard !rows.isEmpty else { return 0 }
+        do {
+            try await supabase.from("fam_trip_packing").insert(rows).execute()
+            await load()
+            return rows.count
+        } catch { errorMessage = error.localizedDescription; return 0 }
+    }
+
     // MARK: Expenses + splits
 
     private func fetchExpenses() async -> [Expense] {

@@ -44,10 +44,18 @@ struct PlaceholderTab: View {
 private struct SettingsTab: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(FamilyStore.self) private var family
+    @State private var showTemplates = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Trip planning") {
+                    Button {
+                        showTemplates = true
+                    } label: {
+                        Label("Packing Templates", systemImage: "suitcase.fill")
+                    }
+                }
                 Section("Account") {
                     LabeledContent("Signed in as", value: authStore.userEmail ?? "—")
                     if let member = family.currentMember {
@@ -63,6 +71,7 @@ private struct SettingsTab: View {
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showTemplates) { PackingTemplatesView() }
         }
     }
 }

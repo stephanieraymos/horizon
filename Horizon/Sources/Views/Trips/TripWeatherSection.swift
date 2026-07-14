@@ -126,14 +126,19 @@ struct TripWeatherSection: View {
         // Prefer exact coordinates; otherwise geocode the clean query string.
         var lat = target.lat, lon = target.lon, name = target.name
         if lat == nil {
-            guard let geo = await WeatherService.geocode(target.query) else { phase = .empty; return }
+            let geo = await WeatherService.geocode(target.query)
+            // If this task was superseded (e.g. places finished loading and the
+            // target changed), don't clobber the newer task's result.
+            if Task.isCancelled { return }
+            guard let geo else { phase = .empty; return }
             lat = geo.latitude; lon = geo.longitude; name = geo.name
         }
-        resolvedName = name
-
         guard let lat, let lon else { phase = .empty; return }
+
         let result = await WeatherService.dailyForecast(latitude: lat, longitude: lon,
                                                         start: start, end: max(start, end))
+        if Task.isCancelled { return }
+        resolvedName = name
         days = result
         phase = result.isEmpty ? .empty : .loaded
 

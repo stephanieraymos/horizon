@@ -1,7 +1,10 @@
 import SwiftUI
+import PhotosUI
 
 struct ReservationEditView: View {
     @Environment(TripDetailStore.self) private var detail
+    @Environment(TripsStore.self) private var trips
+    @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: Reservation
@@ -12,6 +15,14 @@ struct ReservationEditView: View {
     @State private var costText: String
     @State private var typeText: String
     @State private var pasteText: String = ""
+    @State private var searchingLocation = false
+    @State private var screenshotItems: [PhotosPickerItem] = []
+    @State private var uploadingShots = false
+
+    /// Screenshots attached to this reservation.
+    private var screenshots: [TripDocument] {
+        detail.documents.filter { $0.reservationID == draft.id && $0.isImage }
+    }
 
     init(reservation: Reservation) {
         _draft = State(initialValue: reservation)
@@ -72,9 +83,21 @@ struct ReservationEditView: View {
                     }
                 }
 
-                Section("Location") {
+                Section {
+                    Button {
+                        searchingLocation = true
+                    } label: {
+                        Label(draft.type == .lodging ? "Find hotel on map" : "Search on map",
+                              systemImage: "mappin.and.ellipse")
+                    }
                     PlaceComboField(placeholder: "Address / place", text: bind(\.address), placeID: $draft.placeID)
                     TextField("Maps URL", text: bind(\.mapsURL))
+                } header: {
+                    Text("Location")
+                } footer: {
+                    if draft.type == .lodging {
+                        Text("Searching the map saves the hotel as a place with its address, and adds it to the trip.")
+                    }
                 }
 
                 Section("Cost & notes") {
@@ -83,6 +106,34 @@ struct ReservationEditView: View {
                         .keyboardType(.decimalPad)
                         #endif
                     TextField("Notes", text: bind(\.notes), axis: .vertical)
+                }
+
+                Section {
+                    if !screenshots.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(screenshots) { doc in
+                                    CachedStorageImage(path: doc.storagePath) {
+                                        Color(.tertiarySystemFill)
+                                    }
+                                    .scaledToFill()
+                                    .frame(width: 84, height: 84)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .contextMenu {
+                                        Button("Delete", role: .destructive) { Task { await detail.deleteDocument(doc) } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    PhotosPicker(selection: $screenshotItems, matching: .images) {
+                        Label(uploadingShots ? "Uploading…" : "Add screenshot", systemImage: "photo.badge.plus")
+                    }
+                    .disabled(uploadingShots)
+                } header: {
+                    Text("Confirmation screenshots")
+                } footer: {
+                    Text("Attach photos of your booking confirmation.")
                 }
             }
             .navigationTitle(draft.title.isEmpty ? "New \(draft.type.label)" : "Edit")
@@ -93,6 +144,42 @@ struct ReservationEditView: View {
                         .disabled(draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .sheet(isPresented: $searchingLocation) {
+                LocationSearchSheet { result in
+                    draft.address = result.address.nilIfBlank
+                    draft.mapsURL = result.mapsURL
+                    if draft.title.trimmingCharacters(in: .whitespaces).isEmpty { draft.title = result.name }
+                    guard let fid = family.familyID else { return }
+                    Task {
+                        let category = draft.type == .lodging ? "Hotel" : nil
+                        if let place = await trips.saveIfNew(familyID: fid, name: result.name,
+                                                             address: result.address, mapsURL: result.mapsURL,
+                                                             category: category) {
+                            draft.placeID = place.id
+                            await detail.linkPlace(placeID: place.id, familyID: fid)
+                        }
+                    }
+                }
+            }
+            .onChange(of: screenshotItems) { _, items in
+                guard !items.isEmpty else { return }
+                Task { await uploadScreenshots(items) }
+            }
+        }
+    }
+
+    private func uploadScreenshots(_ items: [PhotosPickerItem]) async {
+        guard let fid = family.familyID else { return }
+        uploadingShots = true
+        defer { uploadingShots = false; screenshotItems = [] }
+        // Save the reservation first so the screenshot's reservation_id is valid.
+        await detail.saveReservation(draft)
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data
+            await detail.addDocument(familyID: fid, data: jpeg, fileName: "confirmation.jpg",
+                                     contentType: "image/jpeg", kind: .screenshot,
+                                     reservationID: draft.id, createdBy: family.currentMember?.userID)
         }
     }
 

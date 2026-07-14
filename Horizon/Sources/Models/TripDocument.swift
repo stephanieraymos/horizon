@@ -52,10 +52,12 @@ struct TripDocument: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
     }
 
-    init(id: UUID = UUID(), familyID: UUID, tripID: UUID?, kind: DocumentKind, storagePath: String,
+    init(id: UUID = UUID(), familyID: UUID, tripID: UUID?, reservationID: UUID? = nil,
+         kind: DocumentKind, storagePath: String,
          fileName: String? = nil, contentType: String? = nil, title: String? = nil,
          isSensitive: Bool = false, createdBy: UUID? = nil) {
-        self.id = id; self.familyID = familyID; self.tripID = tripID; self.kind = kind.rawValue
+        self.id = id; self.familyID = familyID; self.tripID = tripID; self.reservationID = reservationID
+        self.kind = kind.rawValue
         self.storagePath = storagePath; self.fileName = fileName; self.contentType = contentType
         self.title = title; self.isSensitive = isSensitive; self.createdBy = createdBy
     }

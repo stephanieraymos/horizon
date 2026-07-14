@@ -328,15 +328,15 @@ final class TripDetailStore {
     /// Uploads a file to the trip-docs bucket and records it. Path is
     /// <family_id>/<trip_id>/<uuid>.<ext> so Storage RLS scopes by family.
     func addDocument(familyID: UUID, data: Data, fileName: String, contentType: String,
-                     kind: DocumentKind, createdBy: UUID?) async {
+                     kind: DocumentKind, reservationID: UUID? = nil, createdBy: UUID?) async {
         let ext = (fileName as NSString).pathExtension.isEmpty ? "dat" : (fileName as NSString).pathExtension
         let docID = UUID()
         // Lowercase to match the case-insensitive storage RLS on the family-id segment.
         let path = "\(familyID.uuidString.lowercased())/\(tripID.uuidString.lowercased())/\(docID.uuidString.lowercased()).\(ext)"
         do {
             try await StorageService.upload(path: path, data: data, contentType: contentType)
-            var doc = TripDocument(id: docID, familyID: familyID, tripID: tripID, kind: kind,
-                                   storagePath: path, fileName: fileName, contentType: contentType,
+            var doc = TripDocument(id: docID, familyID: familyID, tripID: tripID, reservationID: reservationID,
+                                   kind: kind, storagePath: path, fileName: fileName, contentType: contentType,
                                    title: fileName, createdBy: createdBy)
             doc.isSensitive = (kind == .passport)
             try await supabase.from("fam_trip_documents").insert(doc).execute()

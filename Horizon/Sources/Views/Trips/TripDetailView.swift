@@ -264,11 +264,20 @@ struct TripDetailView: View {
         trips.destination(for: current)?.name ?? current.destination?.nilIfBlank
     }
 
+    /// Everything with a location, for one combined trip map: reservations +
+    /// every itinerary stop (falling back to the destination if nothing else).
     private var mapEntries: [(name: String, address: String, systemImage: String)] {
         var out: [(String, String, String)] = []
         for r in detail.reservations {
             if let addr = r.address?.nilIfBlank {
                 out.append((r.title, addr, r.type.systemImage))
+            }
+        }
+        for day in detail.itinerary {
+            for act in day.activities {
+                if let loc = act.locationName?.nilIfBlank {
+                    out.append((act.title.nilIfBlank ?? loc, loc, "mappin"))
+                }
             }
         }
         if out.isEmpty, let dest = destinationName {

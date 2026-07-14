@@ -15,6 +15,7 @@ final class TripDetailStore {
     var splits: [ExpenseSplit] = []
     var documents: [TripDocument] = []
     var purchases: [TripPurchase] = []
+    var todos: [TripTodo] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -34,6 +35,44 @@ final class TripDetailStore {
         splits = await fetchSplits(for: expenses.map(\.id))
         documents = await fetchDocuments()
         purchases = await fetchPurchases()
+        todos = await fetchTodos()
+    }
+
+    // MARK: To-dos (pre-trip checklist)
+
+    private func fetchTodos() async -> [TripTodo] {
+        do {
+            return try await supabase.from("fam_trip_todos")
+                .select().eq("trip_id", value: tripID)
+                .order("done").order("sort").order("created_at")
+                .execute().value
+        } catch { return [] }
+    }
+
+    func saveTodo(_ todo: TripTodo) async {
+        do {
+            try await supabase.from("fam_trip_todos").upsert(todo).execute()
+            if let i = todos.firstIndex(where: { $0.id == todo.id }) { todos[i] = todo }
+            else { todos.append(todo) }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Optimistic done toggle.
+    func toggleTodo(_ todo: TripTodo) async {
+        var updated = todo
+        updated.done.toggle()
+        if let i = todos.firstIndex(where: { $0.id == todo.id }) { todos[i] = updated }
+        do {
+            try await supabase.from("fam_trip_todos")
+                .update(["done": updated.done]).eq("id", value: todo.id).execute()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deleteTodo(_ todo: TripTodo) async {
+        do {
+            try await supabase.from("fam_trip_todos").delete().eq("id", value: todo.id).execute()
+            todos.removeAll { $0.id == todo.id }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     // MARK: Purchases (shopping list)

@@ -6,6 +6,9 @@ import SwiftUI
 struct TripWeatherSection: View {
     let trip: Trip
     let destinationName: String?
+    /// Best trip place to use for the forecast (prefer its coordinates/address
+    /// over the free-text destination, which may not geocode).
+    var place: Place? = nil
 
     @Environment(TripsStore.self) private var trips
 
@@ -15,15 +18,27 @@ struct TripWeatherSection: View {
 
     enum Phase { case idle, loading, tooFar, empty, loaded }
 
-    private var destination: String? { destinationName?.nilIfBlank }
     private var departDate: Date? { trip.departDate }
     private var returnDate: Date? { trip.returnDate }
 
     /// How long a cached forecast is trusted before re-fetching.
     private let cacheTTL: TimeInterval = 6 * 3600
 
+    /// Resolved forecast location: exact coordinates when a place has them, else
+    /// a query string (place address/name, else destination text).
+    private var target: (name: String, lat: Double?, lon: Double?, query: String)? {
+        if let place {
+            let query = place.address?.nilIfBlank ?? place.name
+            return (place.name, place.latitude, place.longitude, query)
+        }
+        if let d = destinationName?.nilIfBlank {
+            return (d, nil, nil, d)
+        }
+        return nil
+    }
+
     var body: some View {
-        if let destination, let depart = departDate {
+        if let target, let depart = departDate {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Weather").font(.title3.bold())
@@ -34,8 +49,8 @@ struct TripWeatherSection: View {
                 }
                 content
             }
-            .task(id: "\(destination)|\(depart.timeIntervalSince1970)|\(returnDate?.timeIntervalSince1970 ?? 0)") {
-                await load(destination: destination, depart: depart)
+            .task(id: "\(target.query)|\(target.lat ?? 0)|\(depart.timeIntervalSince1970)|\(returnDate?.timeIntervalSince1970 ?? 0)") {
+                await load(target: target, depart: depart)
             }
         }
     }
@@ -84,7 +99,7 @@ struct TripWeatherSection: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func load(destination: String, depart: Date) async {
+    private func load(target: (name: String, lat: Double?, lon: Double?, query: String), depart: Date) async {
         phase = .loading
         days = []
         let cal = Calendar.current
@@ -96,9 +111,10 @@ struct TripWeatherSection: View {
 
         let start = max(today, departDay)
         let end = min(cal.startOfDay(for: returnDate ?? depart), windowEnd)
-        let key = cacheKey(destination: destination, start: start, end: end)
+        let locID = target.lat.map { "\($0),\(target.lon ?? 0)" } ?? target.query.lowercased()
+        let key = cacheKey(locID: locID, start: start, end: end)
 
-        // Fresh cache for the same destination + range? Use it, no network.
+        // Fresh cache for the same location + range? Use it, no network.
         if let cache = trip.weatherCache, cache.key == key,
            Date().timeIntervalSince(cache.fetchedAt) < cacheTTL, !cache.days.isEmpty {
             resolvedName = cache.resolvedName
@@ -107,22 +123,28 @@ struct TripWeatherSection: View {
             return
         }
 
-        guard let geo = await WeatherService.geocode(destination) else { phase = .empty; return }
-        resolvedName = geo.name
+        // Prefer exact coordinates; otherwise geocode the clean query string.
+        var lat = target.lat, lon = target.lon, name = target.name
+        if lat == nil {
+            guard let geo = await WeatherService.geocode(target.query) else { phase = .empty; return }
+            lat = geo.latitude; lon = geo.longitude; name = geo.name
+        }
+        resolvedName = name
 
-        let result = await WeatherService.dailyForecast(latitude: geo.latitude, longitude: geo.longitude,
+        guard let lat, let lon else { phase = .empty; return }
+        let result = await WeatherService.dailyForecast(latitude: lat, longitude: lon,
                                                         start: start, end: max(start, end))
         days = result
         phase = result.isEmpty ? .empty : .loaded
 
         if !result.isEmpty {
-            let cache = WeatherCache(key: key, resolvedName: geo.name, fetchedAt: Date(), from: result)
+            let cache = WeatherCache(key: key, resolvedName: name, fetchedAt: Date(), from: result)
             await trips.saveWeatherCache(tripID: trip.id, cache: cache)
         }
     }
 
-    private func cacheKey(destination: String, start: Date, end: Date) -> String {
+    private func cacheKey(locID: String, start: Date, end: Date) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
-        return "\(destination.lowercased())|\(f.string(from: start))|\(f.string(from: end))"
+        return "\(locID)|\(f.string(from: start))|\(f.string(from: end))"
     }
 }

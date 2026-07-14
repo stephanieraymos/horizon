@@ -49,6 +49,11 @@ private struct DestinationDetailView: View {
     @State private var isWishlist: Bool
     @State private var coverItem: PhotosPickerItem?
     @State private var confirmDelete = false
+    @State private var settingLocation = false
+
+    private var linkedPlace: Place? {
+        current.placeID.flatMap { pid in trips.places.first { $0.id == pid } }
+    }
 
     init(destination: Destination) {
         self.destination = destination
@@ -77,6 +82,34 @@ private struct DestinationDetailView: View {
             Section("Destination") {
                 TextField("Name", text: $name)
                 Toggle("Bucket-list / someday", isOn: $isWishlist)
+            }
+
+            Section {
+                if let place = linkedPlace {
+                    HStack(spacing: 10) {
+                        Image(systemName: place.categoryIcon).foregroundStyle(Theme.Colors.brand).frame(width: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(place.name).font(.subheadline)
+                            if let addr = place.address?.nilIfBlank {
+                                Text(addr).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                    }
+                    Button("Change location") { settingLocation = true }
+                    Button("Remove location", role: .destructive) {
+                        Task { await trips.setDestinationPlace(id: current.id, placeID: nil) }
+                    }
+                } else {
+                    Button {
+                        settingLocation = true
+                    } label: {
+                        Label("Set location on map", systemImage: "mappin.and.ellipse")
+                    }
+                }
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Give this destination a real place so every trip here knows where it is — for weather and maps.")
             }
 
             Section("Trips") {
@@ -129,6 +162,18 @@ private struct DestinationDetailView: View {
             }
         } message: {
             Text("Trips keep their name but lose the grouping.")
+        }
+        .sheet(isPresented: $settingLocation) {
+            LocationSearchSheet { result in
+                guard let fid = family.familyID else { return }
+                Task {
+                    if let place = await trips.saveIfNew(familyID: fid, name: result.name,
+                                                         address: result.address, mapsURL: result.mapsURL,
+                                                         latitude: result.latitude, longitude: result.longitude) {
+                        await trips.setDestinationPlace(id: current.id, placeID: place.id)
+                    }
+                }
+            }
         }
     }
 }

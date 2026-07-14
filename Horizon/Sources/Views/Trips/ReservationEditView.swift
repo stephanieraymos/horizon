@@ -154,7 +154,8 @@ struct ReservationEditView: View {
                         let category = draft.type == .lodging ? "Hotel" : nil
                         if let place = await trips.saveIfNew(familyID: fid, name: result.name,
                                                              address: result.address, mapsURL: result.mapsURL,
-                                                             category: category) {
+                                                             category: category,
+                                                             latitude: result.latitude, longitude: result.longitude) {
                             draft.placeID = place.id
                             await detail.linkPlace(placeID: place.id, familyID: fid)
                         }

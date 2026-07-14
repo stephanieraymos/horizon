@@ -7,6 +7,8 @@ struct LocationResult {
     var name: String
     var address: String
     var mapsURL: String
+    var latitude: Double?
+    var longitude: Double?
 }
 
 // MARK: - Completer observable
@@ -21,7 +23,9 @@ final class LocationCompleter: NSObject, ObservableObject, MKLocalSearchComplete
     override init() {
         super.init()
         completer.delegate = self
-        completer.resultTypes = [.query, .address]
+        // Include points-of-interest so named places (beaches, parks, venues)
+        // show up — not just street addresses.
+        completer.resultTypes = [.address, .pointOfInterest, .query]
     }
 
     func update(query: String) {
@@ -177,7 +181,9 @@ struct LocationSearchSheet: View {
         let name = item.name ?? (pendingCompletion?.title ?? "Location")
         let address = buildAddress(from: item.placemark)
         let mapsURL = buildMapsURL(from: item)
-        onSelect(LocationResult(name: name, address: address, mapsURL: mapsURL))
+        let coord = item.placemark.coordinate
+        onSelect(LocationResult(name: name, address: address, mapsURL: mapsURL,
+                                latitude: coord.latitude, longitude: coord.longitude))
         dismiss()
     }
 

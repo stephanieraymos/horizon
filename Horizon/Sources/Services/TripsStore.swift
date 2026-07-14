@@ -104,22 +104,26 @@ final class TripsStore {
     /// across dates and trips. Returns the existing or newly-created place.
     @discardableResult
     func saveIfNew(familyID: UUID, name: String, address: String?, mapsURL: String?,
-                   category: String? = nil) async -> Place? {
+                   category: String? = nil, latitude: Double? = nil, longitude: Double? = nil) async -> Place? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         if let existing = places.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-            // Backfill address/category on an existing bare place.
-            if existing.address?.nilIfBlank == nil, let addr = address?.nilIfBlank {
-                var updated = existing; updated.address = addr
+            // Backfill address / coordinates / category on an existing bare place.
+            if existing.address?.nilIfBlank == nil || existing.latitude == nil {
+                var updated = existing
+                updated.address = address?.nilIfBlank ?? existing.address
                 updated.mapsURL = mapsURL?.nilIfBlank ?? existing.mapsURL
                 updated.category = category?.nilIfBlank ?? existing.category
+                updated.latitude = latitude ?? existing.latitude
+                updated.longitude = longitude ?? existing.longitude
                 await savePlace(updated)
                 return updated
             }
             return existing
         }
         let place = Place(familyID: familyID, name: trimmed, category: category?.nilIfBlank,
-                          address: address?.nilIfBlank, mapsURL: mapsURL?.nilIfBlank)
+                          address: address?.nilIfBlank, mapsURL: mapsURL?.nilIfBlank,
+                          latitude: latitude, longitude: longitude)
         do {
             let row: Place = try await supabase.from("fam_places")
                 .insert(place).select().single().execute().value
@@ -313,6 +317,16 @@ final class TripsStore {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Links a destination to a place (its real location), so any trip using
+    /// this destination knows where it is (weather, maps).
+    func setDestinationPlace(id: UUID, placeID: UUID?) async {
+        struct P: Encodable { let place_id: UUID? }
+        do {
+            try await supabase.from("fam_destinations").update(P(place_id: placeID)).eq("id", value: id).execute()
+            if let i = destinations.firstIndex(where: { $0.id == id }) { destinations[i].placeID = placeID }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func renameDestination(_ destination: Destination, name: String) async {

@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 /// One day's forecast for the trip weather strip.
 struct DailyWeather: Identifiable, Hashable {
@@ -77,19 +78,19 @@ enum WeatherService {
     /// Max days ahead Open-Meteo's forecast covers.
     static let forecastWindowDays = 16
 
-    struct GeoResult: Decodable { let latitude: Double; let longitude: Double; let name: String }
+    struct GeoResult { let latitude: Double; let longitude: Double; let name: String }
 
+    /// Geocode via Apple's CLGeocoder — handles full street addresses, POIs, and
+    /// messy strings (e.g. "Bodega Bay (Doran Beach)"), unlike a place-name-only
+    /// API. Results are cached on the trip row, so this runs rarely.
     static func geocode(_ query: String) async -> GeoResult? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://geocoding-api.open-meteo.com/v1/search?name=\(encoded)&count=1&language=en&format=json")
-        else { return nil }
-        struct Response: Decodable { let results: [GeoResult]? }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            return try JSONDecoder().decode(Response.self, from: data).results?.first
-        } catch { return nil }
+        guard !trimmed.isEmpty else { return nil }
+        let geocoder = CLGeocoder()
+        guard let placemarks = try? await geocoder.geocodeAddressString(trimmed),
+              let p = placemarks.first, let loc = p.location else { return nil }
+        let name = p.locality ?? p.name ?? trimmed
+        return GeoResult(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude, name: name)
     }
 
     static func dailyForecast(latitude: Double, longitude: Double,

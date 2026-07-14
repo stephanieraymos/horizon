@@ -74,7 +74,8 @@ struct TripPlacesSection: View {
                 Task {
                     if let place = await trips.saveIfNew(familyID: familyID, name: result.name,
                                                          address: result.address, mapsURL: result.mapsURL,
-                                                         category: category) {
+                                                         category: category,
+                                                         latitude: result.latitude, longitude: result.longitude) {
                         await store.linkPlace(placeID: place.id, familyID: familyID)
                     }
                 }

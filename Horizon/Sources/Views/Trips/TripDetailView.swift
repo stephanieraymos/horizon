@@ -43,7 +43,8 @@ struct TripDetailView: View {
                 TripPlacesSection(store: detail, familyID: current.familyID)
                 TripWeatherSection(
                     trip: current,
-                    destinationName: trips.destination(for: current)?.name ?? current.destination)
+                    destinationName: trips.destination(for: current)?.name ?? current.destination,
+                    place: weatherPlace)
                 if current.isSomeday { somedayCallout }
                 reservationsSection
                 itinerarySection
@@ -418,6 +419,25 @@ struct TripDetailView: View {
 
     /// Everything with a location, for one combined trip map: reservations +
     /// every itinerary stop (falling back to the destination if nothing else).
+    /// First linked place with a usable location — used for the forecast so we
+    /// geocode a real place, not the free-text destination.
+    private var weatherPlace: Place? {
+        for tp in detail.tripPlaces.sorted(by: { $0.sort < $1.sort }) {
+            if let p = trips.places.first(where: { $0.id == tp.placeID }),
+               p.latitude != nil || p.address?.nilIfBlank != nil {
+                return p
+            }
+        }
+        // Fall back to the destination's saved location, so any trip using that
+        // destination knows where it is.
+        if let dest = trips.destination(for: current), let pid = dest.placeID,
+           let p = trips.places.first(where: { $0.id == pid }),
+           p.latitude != nil || p.address?.nilIfBlank != nil {
+            return p
+        }
+        return nil
+    }
+
     private var mapEntries: [(name: String, address: String, systemImage: String)] {
         var out: [(String, String, String)] = []
         for r in detail.reservations {

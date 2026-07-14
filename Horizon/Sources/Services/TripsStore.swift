@@ -88,6 +88,35 @@ final class TripsStore {
         } catch { return nil }
     }
 
+    /// Renames a category and/or changes its icon. A rename repoints every
+    /// packing item that used the old name (RLS scopes the update to the family)
+    /// so items stay grouped under the new name.
+    func updatePackingCategory(_ category: PackingCategoryItem, name: String, icon: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        struct P: Encodable { let name: String; let icon: String }
+        do {
+            try await supabase.from("fam_packing_categories")
+                .update(P(name: trimmed, icon: icon)).eq("id", value: category.id).execute()
+            if trimmed != category.name {
+                try await supabase.from("fam_trip_packing")
+                    .update(["category": trimmed]).eq("category", value: category.name).execute()
+                try await supabase.from("fam_packing_template_items")
+                    .update(["category": trimmed]).eq("category", value: category.name).execute()
+            }
+            if let i = packingCategories.firstIndex(where: { $0.id == category.id }) {
+                packingCategories[i].name = trimmed; packingCategories[i].icon = icon
+            }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deletePackingCategory(_ category: PackingCategoryItem) async {
+        do {
+            try await supabase.from("fam_packing_categories").delete().eq("id", value: category.id).execute()
+            packingCategories.removeAll { $0.id == category.id }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func updatePackingCategoryIcon(_ category: PackingCategoryItem, icon: String) async {
         do {
             try await supabase.from("fam_packing_categories")

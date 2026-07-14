@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// Seed for a quick-add — pre-fills the new item's person and/or category (from
+/// a group header or the active filters).
+private struct PackingAddContext: Identifiable {
+    let id = UUID()
+    var person: UUID?
+    var category: String?
+}
+
 /// Full-page packing list: filter by person and category, grouped, with per-item
 /// editing (each item is assigned to a traveler on the trip).
 struct PackingListView: View {
@@ -12,7 +20,7 @@ struct PackingListView: View {
     @State private var personFilter: UUID?
     @State private var categoryFilter: String?
     @State private var editingItem: PackingItem?
-    @State private var showAdd = false
+    @State private var addContext: PackingAddContext?
     @State private var showApplyTemplate = false
     @State private var showSaveTemplate = false
     @State private var showManageCategories = false
@@ -72,7 +80,7 @@ struct PackingListView: View {
                     }
                 }
                 ForEach(groups, id: \.title) { group in
-                    Section(group.title) {
+                    Section {
                         ForEach(group.items) { item in
                             PackingRow(item: item, icon: trips.icon(forCategory: item.category),
                                        subtitle: subtitle(for: item, in: group)) {
@@ -86,6 +94,21 @@ struct PackingListView: View {
                                 }
                             }
                         }
+                    } header: {
+                        HStack {
+                            Text(group.title)
+                            Spacer()
+                            Button {
+                                addContext = PackingAddContext(
+                                    person: grouping == .person ? group.items.first?.memberID : personFilter,
+                                    category: grouping == .category ? group.items.first?.category : categoryFilter)
+                            } label: {
+                                Image(systemName: "plus.circle").font(.subheadline)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.Colors.brand)
+                            .accessibilityLabel("Add to \(group.title)")
+                        }
                     }
                 }
             }
@@ -97,7 +120,9 @@ struct PackingListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("Add item", systemImage: "plus") { showAdd = true }
+                    Button("Add item", systemImage: "plus") {
+                        addContext = PackingAddContext(person: personFilter, category: categoryFilter)
+                    }
                     Button("Apply template", systemImage: "suitcase") { showApplyTemplate = true }
                     if !store.packing.isEmpty {
                         Button("Save list as template", systemImage: "square.and.arrow.down") { showSaveTemplate = true }
@@ -106,9 +131,9 @@ struct PackingListView: View {
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
-        .sheet(isPresented: $showAdd) {
+        .sheet(item: $addContext) { ctx in
             PackingItemEditView(store: store, existing: nil, travelers: travelerMembers,
-                                defaultPerson: personFilter, defaultCategory: categoryFilter)
+                                defaultPerson: ctx.person, defaultCategory: ctx.category)
         }
         .sheet(item: $editingItem) { item in
             PackingItemEditView(store: store, existing: item, travelers: travelerMembers,
@@ -120,7 +145,7 @@ struct PackingListView: View {
         .sheet(isPresented: $showSaveTemplate) {
             SaveAsTemplateSheet(packing: store.packing)
         }
-        .sheet(isPresented: $showManageCategories) { ManageCategoriesView() }
+        .sheet(isPresented: $showManageCategories) { ManageCategoriesView(store: store) }
     }
 
     // MARK: Filter chips
@@ -302,22 +327,31 @@ struct PackingItemEditView: View {
     }
 }
 
-/// Manage category icons — every category has an editable icon.
+/// Manage packing categories — add, rename, change icon, or delete.
 struct ManageCategoriesView: View {
+    let store: TripDetailStore
     @Environment(TripsStore.self) private var trips
     @Environment(\.dismiss) private var dismiss
     @State private var editing: PackingCategoryItem?
+    @State private var addingNew = false
 
     var body: some View {
         NavigationStack {
-            List(trips.packingCategories) { cat in
-                Button { editing = cat } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: cat.icon)
-                            .foregroundStyle(Theme.Colors.brand).frame(width: 28)
-                        Text(cat.name).foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "pencil").foregroundStyle(.secondary).font(.caption)
+            List {
+                ForEach(trips.packingCategories) { cat in
+                    Button { editing = cat } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: cat.icon)
+                                .foregroundStyle(Theme.Colors.brand).frame(width: 28)
+                            Text(cat.name).foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "pencil").foregroundStyle(.secondary).font(.caption)
+                        }
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            Task { await trips.deletePackingCategory(cat) }
+                        } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
             }
@@ -325,12 +359,75 @@ struct ManageCategoriesView: View {
             #if !targetEnvironment(macCatalyst)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .sheet(item: $editing) { cat in
-                IconPicker(current: cat.icon) { icon in
-                    Task { await trips.updatePackingCategoryIcon(cat, icon: icon) }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { addingNew = true } label: { Image(systemName: "plus") }
                 }
             }
+            .sheet(item: $editing) { cat in CategoryEditView(store: store, category: cat) }
+            .sheet(isPresented: $addingNew) { CategoryEditView(store: store, category: nil) }
         }
+    }
+}
+
+/// Add or edit a single packing category (name + icon).
+private struct CategoryEditView: View {
+    let store: TripDetailStore
+    let category: PackingCategoryItem?
+    @Environment(TripsStore.self) private var trips
+    @Environment(FamilyStore.self) private var family
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String
+    @State private var icon: String
+    @State private var showIconPicker = false
+
+    init(store: TripDetailStore, category: PackingCategoryItem?) {
+        self.store = store
+        self.category = category
+        _name = State(initialValue: category?.name ?? "")
+        _icon = State(initialValue: category?.icon ?? "shippingbox")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Category name", text: $name)
+                    Button { showIconPicker = true } label: {
+                        HStack {
+                            Text("Icon").foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: icon).foregroundStyle(Theme.Colors.brand)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(category == nil ? "New Category" : "Edit Category")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .sheet(isPresented: $showIconPicker) {
+                IconPicker(current: icon) { icon = $0 }
+            }
+        }
+    }
+
+    private func save() async {
+        guard let fid = family.familyID else { return }
+        if let category {
+            await trips.updatePackingCategory(category, name: name, icon: icon)
+            // Reload so the current trip's items reflect a renamed category.
+            await store.load()
+        } else {
+            await trips.createPackingCategory(familyID: fid, name: name, icon: icon)
+        }
+        dismiss()
     }
 }

@@ -21,15 +21,20 @@ struct ComboField: View {
     var onAdd: (String) -> Void = { _ in }
 
     @FocusState private var focused: Bool
+    /// Mirrors focus but lingers briefly after focus loss so a tap on a suggestion
+    /// still registers before the list collapses (the tap-drop gotcha).
+    @State private var active = false
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
 
-    // Not gated on @FocusState: gating there lets a tap on a suggestion resign
-    // first-responder and remove the row mid-tap (dropping the selection). Instead
-    // show while there's query text, and hide once the text is a committed value.
+    // With an empty query we show the FULL list while the field is active (so a
+    // tap reveals everything); typing filters it down. The typed case isn't gated
+    // on focus, so tapping a filtered suggestion never drops the selection.
     private var matches: [Option] {
         let q = trimmed.lowercased()
-        guard !q.isEmpty else { return [] }
+        if q.isEmpty {
+            return active ? Array(options.sorted { $0.name < $1.name }.prefix(50)) : []
+        }
         let filtered = options.filter { $0.name.lowercased().contains(q) }
         if filtered.count == 1 && filtered[0].name.caseInsensitiveCompare(trimmed) == .orderedSame { return [] }
         return Array(filtered.prefix(8))
@@ -44,6 +49,16 @@ struct ComboField: View {
         TextField(placeholder, text: $text)
             .focused($focused)
             .autocorrectionDisabled()
+            .onChange(of: focused) { _, isFocused in
+                if isFocused { active = true }
+                else {
+                    // Keep the list up briefly so a tap on a row lands first.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        if !focused { active = false }
+                    }
+                }
+            }
 
         ForEach(matches) { opt in
             Button {

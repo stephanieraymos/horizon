@@ -15,6 +15,90 @@ enum ReservationParser {
         var type: ReservationType?
     }
 
+    /// A single detected booking, ready to become a `Reservation`.
+    struct Detected {
+        var type: ReservationType
+        var title: String?
+        var confirmation: String?
+        var startAt: Date?
+        var endAt: Date?
+        var details: [String: String] = [:]
+    }
+
+    /// All dates mentioned, in document order (with times when present).
+    private static func allDates(in text: String) -> [Date] {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, range: range).compactMap(\.date)
+    }
+
+    /// All flight numbers (airline code + digits) in document order.
+    private static func allFlights(in text: String) -> [(airline: String, number: String)] {
+        guard let re = try? NSRegularExpression(pattern: #"\b([A-Z]{2})\s?(\d{1,4})\b"#) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return re.matches(in: text, range: range).compactMap { m in
+            guard let a = Range(m.range(at: 1), in: text), let n = Range(m.range(at: 2), in: text) else { return nil }
+            let code = String(text[a])
+            // Skip common non-airline two-letter+digit noise.
+            guard !["PM", "AM"].contains(code) else { return nil }
+            return (code, "\(code)\(text[n])")
+        }
+    }
+
+    /// Detects one or more bookings from pasted text — multiple flight legs
+    /// (outbound + return), or a hotel stay with check-in/check-out. Falls back
+    /// to a single best-guess reservation.
+    static func detectAll(_ text: String) -> [Detected] {
+        let confirmation = firstMatch(
+            #"(?:confirmation|record locator|booking|conf(?:irmation)?\s*(?:#|number|no)?)\s*[:#]?\s*([A-Z0-9]{5,8})"#,
+            in: text, group: 1)
+        let flights = allFlights(in: text)
+        let dates = allDates(in: text)
+
+        // Multi-leg flights: one reservation per flight number, paired with the
+        // date and airport pair at the same index where available.
+        if !flights.isEmpty {
+            let codes = allMatches(#"\b([A-Z]{3})\b"#, in: text)
+                .filter { !["THE", "AND", "YOU", "FOR", "PNR", "ETA", "ETD"].contains($0) }
+            return flights.enumerated().map { i, flight in
+                var d = Detected(type: .flight, title: flight.number, confirmation: confirmation)
+                d.startAt = i < dates.count ? dates[i] : dates.first
+                d.details["airline"] = flight.airline
+                d.details["flight_number"] = flight.number
+                if codes.count >= (2 * i + 2) {
+                    d.details["depart_airport"] = codes[2 * i]
+                    d.details["arrive_airport"] = codes[2 * i + 1]
+                }
+                return d
+            }
+        }
+
+        // Hotel: check-in / check-out as the first two dates.
+        if inferType(from: text, hasFlight: false) == .lodging {
+            var d = Detected(type: .lodging, title: hotelName(in: text), confirmation: confirmation)
+            d.startAt = dates.first
+            d.endAt = dates.count > 1 ? dates[1] : nil
+            return [d]
+        }
+
+        // Fallback: a single reservation of the best-guess type.
+        let type = inferType(from: text, hasFlight: false) ?? .other
+        return [Detected(type: type, title: nil, confirmation: confirmation, startAt: dates.first)]
+    }
+
+    /// Best-effort hotel name — a line containing a lodging keyword.
+    private static func hotelName(in text: String) -> String? {
+        let brands = ["hotel", "inn", "resort", "suites", "lodge", "marriott", "hilton", "hyatt"]
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            let lower = line.lowercased()
+            if brands.contains(where: lower.contains), line.count <= 60, !line.isEmpty {
+                return line
+            }
+        }
+        return nil
+    }
+
     private static func firstMatch(_ pattern: String, in text: String, group: Int = 1) -> String? {
         guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let range = NSRange(text.startIndex..., in: text)

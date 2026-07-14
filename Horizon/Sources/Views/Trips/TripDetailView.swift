@@ -101,13 +101,15 @@ struct TripDetailView: View {
             TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
         }
         .sheet(isPresented: $showPasteReservation) {
-            PasteReservationSheet(familyID: current.familyID, tripID: current.id) { parsed in
+            PasteReservationSheet(familyID: current.familyID, tripID: current.id, onReview: { parsed in
                 // Let the paste sheet finish dismissing before presenting the editor.
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 350_000_000)
                     editingReservation = parsed
                 }
-            }
+            }, onImportMany: { list in
+                Task { for r in list { await detail.saveReservation(r) } }
+            })
         }
         .confirmationDialog("Delete this trip?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Trip", role: .destructive) {

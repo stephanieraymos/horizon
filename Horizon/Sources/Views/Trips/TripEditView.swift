@@ -5,6 +5,7 @@ import SwiftUI
 struct TripEditView: View {
     @Environment(TripsStore.self) private var trips
     @Environment(FamilyStore.self) private var family
+    @Environment(EventsStore.self) private var events
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: Trip
@@ -126,6 +127,10 @@ struct TripEditView: View {
         draft.budget = Double(budgetText.filter(\.isNumber))
         if draft.createdBy == nil { draft.createdBy = family.currentMember?.id }
         await trips.save(draft)
+        // A dated trip automatically gets (and keeps in sync) a linked countdown.
+        await events.syncCountdown(forTripID: draft.id, familyID: draft.familyID,
+                                   name: draft.name, departDate: draft.departDate,
+                                   createdBy: family.currentMember?.userID)
         dismiss()
     }
 }

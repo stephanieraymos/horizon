@@ -6,9 +6,13 @@ import SwiftUI
 struct EventsListView: View {
     @Environment(EventsStore.self) private var events
     @Environment(FamilyStore.self) private var family
+    @Environment(TripsStore.self) private var trips
 
     @State private var editing: FamilyEvent?
     @State private var isCreating = false
+    @State private var showingTrip: Trip?
+    @State private var makeEventFor: FamilyEvent?
+    @State private var linkingEvent: FamilyEvent?
 
     @AppStorage("events.showBirthdays") private var showBirthdays = true
     @AppStorage("events.showHolidays")  private var showHolidays  = true
@@ -74,14 +78,54 @@ struct EventsListView: View {
                 .task {
                     if events.events.isEmpty { await events.load() }
                     if family.members.isEmpty { await family.load() }
+                    if trips.trips.isEmpty { await trips.load() }
                 }
+                .navigationDestination(item: $showingTrip) { TripDetailView(trip: $0) }
                 .sheet(item: $editing) { event in
                     EventEditView(existing: event)
                 }
                 .sheet(isPresented: $isCreating) {
                     EventEditView(existing: nil)
                 }
+                .sheet(item: $linkingEvent) { event in
+                    LinkTripSheet(event: event)
+                }
+                .confirmationDialog("Make this an event?",
+                                    isPresented: Binding(get: { makeEventFor != nil },
+                                                         set: { if !$0 { makeEventFor = nil } }),
+                                    presenting: makeEventFor) { event in
+                    Button("Create a trip") { Task { await createTrip(from: event) } }
+                    Button("Link an existing trip") {
+                        let e = event
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                            linkingEvent = e
+                        }
+                    }
+                    if canEdit { Button("Edit countdown") { editing = event } }
+                    Button("Cancel", role: .cancel) {}
+                } message: { event in
+                    Text("Link “\(event.title)” to a trip so tapping it opens the trip.")
+                }
         }
+    }
+
+    private func tap(_ event: FamilyEvent, synthetic: Bool) {
+        if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
+            showingTrip = trip
+        } else if canEdit && !synthetic {
+            makeEventFor = event
+        }
+    }
+
+    private func createTrip(from event: FamilyEvent) async {
+        guard let familyID = family.familyID else { return }
+        let trip = Trip(familyID: familyID, name: event.title, departDate: event.eventDate,
+                        status: .planning, createdBy: family.currentMember?.id)
+        await trips.save(trip)
+        await events.linkTrip(event, tripID: trip.id)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        showingTrip = trips.trips.first { $0.id == trip.id } ?? trip
     }
 
     @ViewBuilder
@@ -163,10 +207,11 @@ struct EventsListView: View {
 
     private func row(for event: FamilyEvent, isUpcoming: Bool) -> some View {
         let synthetic = isSynthetic(event)
+        let linked = event.tripID != nil && trips.trips.contains { $0.id == event.tripID }
         return Button {
-            if canEdit && !synthetic { editing = event }
+            tap(event, synthetic: synthetic)
         } label: {
-            EventRow(event: event, isUpcoming: isUpcoming)
+            EventRow(event: event, isUpcoming: isUpcoming, linkedToTrip: linked)
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing) {
@@ -176,7 +221,69 @@ struct EventsListView: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                Button {
+                    editing = event
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .tint(.blue)
             }
+        }
+    }
+}
+
+// MARK: - Link-to-trip picker
+
+private struct LinkTripSheet: View {
+    let event: FamilyEvent
+    @Environment(EventsStore.self) private var events
+    @Environment(TripsStore.self) private var trips
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if trips.trips.isEmpty {
+                    ContentUnavailableView("No trips yet", systemImage: "airplane",
+                        description: Text("Create a trip first, then link it here."))
+                } else {
+                    ForEach(trips.trips) { trip in
+                        Button {
+                            Task { await events.linkTrip(event, tripID: trip.id); dismiss() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "airplane").foregroundStyle(Theme.Colors.brand).frame(width: 24)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(trip.name).foregroundStyle(.primary)
+                                    if let depart = trip.departDate {
+                                        Text(depart, format: .dateTime.month(.abbreviated).day().year())
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if event.tripID == trip.id {
+                                    Image(systemName: "checkmark").foregroundStyle(Theme.Colors.brand)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Link a Trip")
+            #if !targetEnvironment(macCatalyst)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                if event.tripID != nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Unlink", role: .destructive) {
+                            Task { await events.linkTrip(event, tripID: nil); dismiss() }
+                        }
+                    }
+                }
+            }
+            .task { if trips.trips.isEmpty { await trips.load() } }
         }
     }
 }
@@ -211,6 +318,7 @@ private struct EventFilterChip: View {
 private struct EventRow: View {
     let event: FamilyEvent
     let isUpcoming: Bool
+    var linkedToTrip: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -224,7 +332,13 @@ private struct EventRow: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(event.title).font(.headline)
+                HStack(spacing: 5) {
+                    Text(event.title).font(.headline)
+                    if linkedToTrip {
+                        Image(systemName: "airplane.circle.fill")
+                            .font(.caption).foregroundStyle(Theme.Colors.brand)
+                    }
+                }
                 HStack(spacing: 6) {
                     Text(dateLabel)
                         .font(.caption)

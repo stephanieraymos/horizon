@@ -66,6 +66,7 @@ final class EventsStore {
         description: String?,
         emoji: String?,
         members: [String]?,
+        tripID: UUID? = nil,
         createdBy: UUID?
     ) async -> Bool {
         struct EventUpsert: Encodable {
@@ -78,6 +79,7 @@ final class EventsStore {
             let description: String?
             let emoji: String?
             let members: [String]?
+            let trip_id: UUID?
             let created_by: UUID?
         }
 
@@ -96,6 +98,7 @@ final class EventsStore {
             description: description?.nilIfBlank,
             emoji: emoji?.nilIfBlank,
             members: members?.isEmpty == false ? members : nil,
+            trip_id: tripID,
             created_by: createdBy
         )
 
@@ -130,5 +133,62 @@ final class EventsStore {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: - Trip linking
+
+    /// The (loaded) countdown linked to a trip, if any.
+    func event(forTrip tripID: UUID) -> FamilyEvent? {
+        events.first { $0.tripID == tripID }
+    }
+
+    /// Sets or clears the trip link on an existing countdown.
+    func linkTrip(_ event: FamilyEvent, tripID: UUID?) async {
+        struct P: Encodable { let trip_id: UUID? }
+        do {
+            try await supabase.from("fam_events")
+                .update(P(trip_id: tripID)).eq("id", value: event.id).execute()
+            if let i = events.firstIndex(where: { $0.id == event.id }) { events[i].tripID = tripID }
+        } catch { self.error = error.localizedDescription }
+    }
+
+    /// Ensures a dated trip has a linked countdown, creating it or keeping its
+    /// title/date in sync. Someday trips (no depart date) are skipped. Returns
+    /// the linked event's id if one exists/was created.
+    @discardableResult
+    func syncCountdown(forTripID tripID: UUID, familyID: UUID, name: String,
+                       departDate: Date?, createdBy: UUID?) async -> UUID? {
+        guard let departDate else { return nil }
+
+        // Look for an existing linked countdown (query in case events aren't loaded).
+        let existing: FamilyEvent?
+        if let loaded = event(forTrip: tripID) {
+            existing = loaded
+        } else {
+            existing = try? await supabase.from("fam_events")
+                .select().eq("trip_id", value: tripID).limit(1).single().execute().value
+        }
+
+        await upsert(
+            id: existing?.id,
+            familyID: familyID,
+            title: name,
+            eventType: FamilyEventType.vacation.rawValue,
+            eventDate: departDate,
+            isAnnual: false,
+            description: existing?.description,
+            emoji: existing?.emoji ?? "✈️",
+            members: existing?.members,
+            tripID: tripID,
+            createdBy: existing?.createdBy ?? createdBy)
+        return event(forTrip: tripID)?.id ?? existing?.id
+    }
+
+    /// Removes the countdown linked to a trip (used when the trip is deleted).
+    func deleteForTrip(_ tripID: UUID) async {
+        do {
+            try await supabase.from("fam_events").delete().eq("trip_id", value: tripID).execute()
+            events.removeAll { $0.tripID == tripID }
+        } catch { self.error = error.localizedDescription }
     }
 }

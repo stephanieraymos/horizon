@@ -24,8 +24,13 @@ struct HomeView: View {
                     if !weekDates.isEmpty {
                         datesSection
                     }
-                    if let event = nextCountdown {
-                        countdownCard(event)
+                    if !nextBirthdays.isEmpty {
+                        countdownSection("Birthdays", systemImage: "birthday.cake.fill",
+                                         tint: .pink, events: nextBirthdays)
+                    }
+                    if !nextEvents.isEmpty {
+                        countdownSection("Events", systemImage: "calendar.badge.clock",
+                                         tint: Theme.Colors.brand, events: nextEvents)
                     }
                     if isEmpty {
                         ContentUnavailableView(
@@ -70,22 +75,30 @@ struct HomeView: View {
         return dates.upcoming.filter { ($0.scheduledAt ?? .distantFuture) <= weekOut }
     }
 
-    /// Synthetic member birthdays merged with DB events; nearest upcoming.
-    private var nextCountdown: FamilyEvent? {
-        var all = events.upcoming
-        if let familyID = family.members.first?.familyID {
-            all += family.members.compactMap { m in
+    /// Next two upcoming member birthdays (synthetic from FamilyMember.birthday).
+    private var nextBirthdays: [FamilyEvent] {
+        guard let familyID = family.members.first?.familyID else { return [] }
+        return family.members
+            .compactMap { m -> FamilyEvent? in
                 guard let b = m.birthday else { return nil }
                 return FamilyEvent(id: m.id, familyID: familyID, title: "\(m.name)'s Birthday",
                                    eventType: FamilyEventType.birthday.rawValue, eventDate: b,
                                    isAnnual: true, emoji: "🎂")
             }
-        }
-        return all.min { $0.daysAway < $1.daysAway }
+            .sorted { $0.daysAway < $1.daysAway }
+            .prefix(2).map { $0 }
+    }
+
+    /// Next two upcoming non-birthday countdown events.
+    private var nextEvents: [FamilyEvent] {
+        events.upcoming
+            .filter { $0.eventType != FamilyEventType.birthday.rawValue }
+            .prefix(2).map { $0 }
     }
 
     private var isEmpty: Bool {
-        nextTrip == nil && dashboard.upcomingReservations.isEmpty && weekDates.isEmpty && nextCountdown == nil
+        nextTrip == nil && dashboard.upcomingReservations.isEmpty && weekDates.isEmpty
+            && nextBirthdays.isEmpty && nextEvents.isEmpty
     }
 
     // MARK: Cards
@@ -197,26 +210,40 @@ struct HomeView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func countdownCard(_ event: FamilyEvent) -> some View {
-        HStack(spacing: 14) {
-            if let emoji = event.emoji, !emoji.isEmpty {
-                Text(emoji).font(.system(size: 34))
-            } else {
-                Image(systemName: "calendar.badge.clock").font(.title).foregroundStyle(Theme.Colors.brand)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title).font(.subheadline.weight(.semibold))
-                Text("Next countdown").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 0) {
-                Text("\(event.daysAway)").font(.title2.bold())
-                    .foregroundStyle(event.daysAway <= 7 ? .orange : .primary)
-                Text(event.daysAway == 1 ? "day" : "days").font(.caption).foregroundStyle(.secondary)
+    private func countdownSection(_ title: String, systemImage: String, tint: Color,
+                                  events: [FamilyEvent]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: systemImage).font(.headline).foregroundStyle(tint)
+            ForEach(events) { event in
+                if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
+                    NavigationLink { TripDetailView(trip: trip) } label: { countdownRow(event, chevron: true) }
+                        .buttonStyle(.plain)
+                } else {
+                    countdownRow(event, chevron: false)
+                }
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func countdownRow(_ event: FamilyEvent, chevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            if let emoji = event.emoji, !emoji.isEmpty {
+                Text(emoji).font(.system(size: 26))
+            } else {
+                Image(systemName: "calendar").font(.title3).foregroundStyle(.secondary).frame(width: 26)
+            }
+            Text(event.title).font(.subheadline.weight(.medium))
+            Spacer()
+            Text(event.daysAway == 0 ? "Today" : "\(event.daysAway)d")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(event.daysAway <= 7 ? .orange : .primary)
+            if chevron {
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 3)
     }
 }

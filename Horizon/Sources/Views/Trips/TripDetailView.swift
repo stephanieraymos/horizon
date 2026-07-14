@@ -6,6 +6,7 @@ struct TripDetailView: View {
     @Environment(TripsStore.self) private var trips
     @Environment(FamilyStore.self) private var family
     @Environment(TravelerProfilesStore.self) private var travelerProfiles
+    @Environment(EventsStore.self) private var events
     @Environment(\.dismiss) private var dismiss
 
     @State private var detail: TripDetailStore
@@ -113,7 +114,7 @@ struct TripDetailView: View {
         }
         .confirmationDialog("Delete this trip?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Trip", role: .destructive) {
-                Task { await trips.delete(current); dismiss() }
+                Task { await events.deleteForTrip(current.id); await trips.delete(current); dismiss() }
             }
         }
         .alert(calendarIsError ? "Couldn't add to Calendar" : "Added to Calendar",

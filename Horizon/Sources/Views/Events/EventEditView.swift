@@ -139,6 +139,7 @@ struct EventEditView: View {
             description: description,
             emoji: emoji,
             members: selectedMembers.isEmpty ? nil : Array(selectedMembers).sorted(),
+            tripID: existing?.tripID,
             createdBy: existing?.createdBy ?? family.currentMember?.userID
         )
         isSaving = false

@@ -16,6 +16,8 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
     var coverPhotoURL: String?
     var members: [String]?
     var albumID: UUID?
+    /// Optional link to a Trip — tapping the countdown opens the trip.
+    var tripID: UUID?
     var createdBy: UUID?
     let createdAt: Date
     let updatedAt: Date
@@ -31,6 +33,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         case coverPhotoURL = "cover_photo_url"
         case members
         case albumID = "album_id"
+        case tripID = "trip_id"
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -49,6 +52,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         coverPhotoURL = try c.decodeIfPresent(String.self, forKey: .coverPhotoURL)
         members       = try c.decodeIfPresent([String].self, forKey: .members)
         albumID       = try c.decodeIfPresent(UUID.self, forKey: .albumID)
+        tripID        = try c.decodeIfPresent(UUID.self, forKey: .tripID)
         createdBy     = try c.decodeIfPresent(UUID.self, forKey: .createdBy)
         createdAt     = try c.decode(Date.self, forKey: .createdAt)
         updatedAt     = try c.decode(Date.self, forKey: .updatedAt)
@@ -68,6 +72,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         coverPhotoURL: String? = nil,
         members: [String]? = nil,
         albumID: UUID? = nil,
+        tripID: UUID? = nil,
         createdBy: UUID? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -83,6 +88,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         self.coverPhotoURL = coverPhotoURL
         self.members       = members
         self.albumID       = albumID
+        self.tripID        = tripID
         self.createdBy     = createdBy
         self.createdAt     = createdAt
         self.updatedAt     = updatedAt
@@ -101,6 +107,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(coverPhotoURL, forKey: .coverPhotoURL)
         try c.encodeIfPresent(members, forKey: .members)
         try c.encodeIfPresent(albumID, forKey: .albumID)
+        try c.encodeIfPresent(tripID, forKey: .tripID)
         try c.encodeIfPresent(createdBy, forKey: .createdBy)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)

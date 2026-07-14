@@ -178,19 +178,22 @@ final class TripsStore {
 
     /// Uploads a cover photo and links it to the trip (stores the storage path).
     /// A fresh filename per upload changes cover_photo_url so cached images don't
-    /// keep showing the previous cover.
-    func setTripCover(tripID: UUID, familyID: UUID, imageData: Data) async {
-        let path = "\(familyID.uuidString)/covers/trip-\(tripID.uuidString)-\(UUID().uuidString).jpg"
+    /// keep showing the previous cover. Returns false on failure.
+    @discardableResult
+    func setTripCover(tripID: UUID, familyID: UUID, imageData: Data) async -> Bool {
+        // Lowercase: storage RLS matches the family-id segment against a lowercase uuid.
+        let path = "\(familyID.uuidString.lowercased())/covers/trip-\(tripID.uuidString.lowercased())-\(UUID().uuidString.lowercased()).jpg"
         struct P: Encodable { let cover_photo_url: String }
         do {
             try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")
             try await supabase.from("fam_trips").update(P(cover_photo_url: path)).eq("id", value: tripID).execute()
             if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverPhotoURL = path }
-        } catch { errorMessage = error.localizedDescription }
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     func setDestinationCover(id: UUID, familyID: UUID, imageData: Data) async {
-        let path = "\(familyID.uuidString)/covers/dest-\(id.uuidString)-\(UUID().uuidString).jpg"
+        let path = "\(familyID.uuidString.lowercased())/covers/dest-\(id.uuidString.lowercased())-\(UUID().uuidString.lowercased()).jpg"
         struct P: Encodable { let cover_photo_url: String }
         do {
             try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")

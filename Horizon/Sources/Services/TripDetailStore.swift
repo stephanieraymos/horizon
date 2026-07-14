@@ -241,7 +241,8 @@ final class TripDetailStore {
                      kind: DocumentKind, createdBy: UUID?) async {
         let ext = (fileName as NSString).pathExtension.isEmpty ? "dat" : (fileName as NSString).pathExtension
         let docID = UUID()
-        let path = "\(familyID.uuidString)/\(tripID.uuidString)/\(docID.uuidString).\(ext)"
+        // Lowercase to match the case-insensitive storage RLS on the family-id segment.
+        let path = "\(familyID.uuidString.lowercased())/\(tripID.uuidString.lowercased())/\(docID.uuidString.lowercased()).\(ext)"
         do {
             try await StorageService.upload(path: path, data: data, contentType: contentType)
             var doc = TripDocument(id: docID, familyID: familyID, tripID: tripID, kind: kind,

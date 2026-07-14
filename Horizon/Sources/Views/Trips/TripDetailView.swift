@@ -14,6 +14,7 @@ struct TripDetailView: View {
     @State private var editingDay: ItineraryDay?
     @State private var coverItem: PhotosPickerItem?
     @State private var showMemories = false
+    @State private var coverError: String?
 
     init(trip: Trip) {
         self.trip = trip
@@ -106,12 +107,19 @@ struct TripDetailView: View {
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    await trips.setTripCover(tripID: current.id, familyID: current.familyID, imageData: data)
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
+                    coverError = "Couldn't read that photo. Try a different one."
+                    coverItem = nil; return
                 }
+                let ok = await trips.setTripCover(tripID: current.id, familyID: current.familyID, imageData: data)
+                if !ok { coverError = trips.errorMessage ?? "Upload failed. Check your connection." }
                 coverItem = nil
             }
         }
+        .alert("Couldn't add cover", isPresented: Binding(
+            get: { coverError != nil }, set: { if !$0 { coverError = nil } })) {
+            Button("OK", role: .cancel) { coverError = nil }
+        } message: { Text(coverError ?? "") }
     }
 
     private var header: some View {

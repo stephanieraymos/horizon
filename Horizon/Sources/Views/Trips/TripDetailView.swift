@@ -48,7 +48,7 @@ struct TripDetailView: View {
                 itinerarySection
                 notesSection
                 TripTodosSection(store: detail, familyID: current.familyID)
-                TripPackingSection(store: detail, travelerNames: current.travelers ?? [])
+                TripPackingSection(store: detail, trip: current)
                 TripPurchasesSection(store: detail, familyID: current.familyID)
                 TripExpensesSection(store: detail, trip: current)
                 TripDocumentsSection(store: detail, familyID: current.familyID)

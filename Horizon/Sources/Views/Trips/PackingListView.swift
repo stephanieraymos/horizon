@@ -28,9 +28,11 @@ struct PackingListView: View {
 
     /// People who actually have items (for the filter chips).
     private var peopleWithItems: [FamilyMember] {
-        let ids = Set(store.packing.map(\.memberID))
+        let ids = Set(store.packing.compactMap(\.memberID))
         return travelerMembers.filter { ids.contains($0.id) }
     }
+    /// Whether any item is shared (no person).
+    private var hasSharedItems: Bool { store.packing.contains { $0.memberID == nil } }
     private var categoriesPresent: [String] {
         var seen = Set<String>(); var out: [String] = []
         for p in store.packing {
@@ -128,7 +130,7 @@ struct PackingListView: View {
             if !peopleWithItems.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        PackFilterChip(label: "Everyone", active: personFilter == nil) { personFilter = nil }
+                        PackFilterChip(label: "All", active: personFilter == nil) { personFilter = nil }
                         ForEach(peopleWithItems) { m in
                             PackFilterChip(label: m.name.split(separator: " ").first.map(String.init) ?? m.name,
                                            active: personFilter == m.id) {
@@ -159,7 +161,10 @@ struct PackingListView: View {
         switch grouping {
         case .person:
             return Dictionary(grouping: filtered, by: \.memberID)
-                .map { (family.memberName(id: $0.key) ?? "Someone", "person.circle", $0.value.sorted { $0.item < $1.item }) }
+                .map { key, items -> (String, String, [PackingItem]) in
+                    let title = key.flatMap { family.memberName(id: $0) } ?? "Everyone"
+                    return (title, key == nil ? "person.2.circle" : "person.circle", items.sorted { $0.item < $1.item })
+                }
                 .sorted { $0.0 < $1.0 }
                 .map { (title: $0.0, icon: $0.1, items: $0.2) }
         case .category:
@@ -174,7 +179,7 @@ struct PackingListView: View {
     private func subtitle(for item: PackingItem, in group: (title: String, icon: String, items: [PackingItem])) -> String? {
         switch grouping {
         case .person: return item.category?.nilIfBlank
-        case .category: return family.memberName(id: item.memberID)
+        case .category: return item.memberID.flatMap { family.memberName(id: $0) } ?? "Everyone"
         }
     }
 }
@@ -245,7 +250,7 @@ struct PackingItemEditView: View {
         NavigationStack {
             Form {
                 Picker("For", selection: $memberID) {
-                    Text("Choose…").tag(UUID?.none)
+                    Text("Everyone").tag(UUID?.none)
                     ForEach(travelers) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
                 TextField("Item", text: $item)
@@ -263,14 +268,15 @@ struct PackingItemEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }
-                        .disabled(memberID == nil || item.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(item.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .onAppear {
                 if let e = existing {
                     memberID = e.memberID; item = e.item; categoryText = e.category ?? ""
                 } else {
-                    memberID = defaultPerson ?? travelers.first(where: { $0.id == family.currentMember?.id })?.id ?? travelers.first?.id
+                    // Default to the active person filter, else "Everyone".
+                    memberID = defaultPerson
                     categoryText = defaultCategory ?? ""
                 }
             }

@@ -33,7 +33,8 @@ struct PackingCategoryItem: Codable, Identifiable, Hashable {
 struct PackingItem: Codable, Identifiable, Hashable {
     let id: UUID
     var tripID: UUID
-    var memberID: UUID
+    /// Owner of the item, or nil for "Everyone" (shared).
+    var memberID: UUID?
     var item: String
     var checked: Bool
     var autoSuggested: Bool
@@ -48,7 +49,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
         case category
     }
 
-    init(id: UUID = UUID(), tripID: UUID, memberID: UUID, item: String,
+    init(id: UUID = UUID(), tripID: UUID, memberID: UUID?, item: String,
          checked: Bool = false, autoSuggested: Bool = false, category: String? = nil) {
         self.id = id; self.tripID = tripID; self.memberID = memberID
         self.item = item; self.checked = checked
@@ -59,7 +60,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         tripID = try c.decode(UUID.self, forKey: .tripID)
-        memberID = try c.decode(UUID.self, forKey: .memberID)
+        memberID = try c.decodeIfPresent(UUID.self, forKey: .memberID)
         item = try c.decode(String.self, forKey: .item)
         checked = try c.decodeIfPresent(Bool.self, forKey: .checked) ?? false
         autoSuggested = try c.decodeIfPresent(Bool.self, forKey: .autoSuggested) ?? false
@@ -70,7 +71,7 @@ struct PackingItem: Codable, Identifiable, Hashable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(tripID, forKey: .tripID)
-        try c.encode(memberID, forKey: .memberID)
+        try c.encodeIfPresent(memberID, forKey: .memberID)
         try c.encode(item, forKey: .item)
         try c.encode(checked, forKey: .checked)
         try c.encode(autoSuggested, forKey: .autoSuggested)

@@ -13,8 +13,9 @@ struct TripPackingSection: View {
     /// Per-person "packed/total" for a quick glance.
     private var perPerson: [(name: String, packed: Int, total: Int)] {
         Dictionary(grouping: store.packing, by: \.memberID)
-            .map { (family.memberName(id: $0.key) ?? "Someone",
-                    $0.value.filter(\.checked).count, $0.value.count) }
+            .map { key, items in
+                (key.flatMap { family.memberName(id: $0) } ?? "Everyone",
+                 items.filter(\.checked).count, items.count) }
             .sorted { $0.0 < $1.0 }
             .map { (name: $0.0, packed: $0.1, total: $0.2) }
     }

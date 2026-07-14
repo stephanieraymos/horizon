@@ -1,17 +1,26 @@
 import SwiftUI
+import Charts
 
 struct TripExpensesSection: View {
     let store: TripDetailStore
     let trip: Trip
     @Environment(FamilyStore.self) private var family
     @State private var editing: Expense?
+    @State private var showConverter = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Expenses").font(.title3.bold())
                 Spacer()
-                Button { editing = Expense(tripID: trip.id, spentOn: trip.departDate ?? Date()) } label: {
+                Menu {
+                    Button("Add expense", systemImage: "plus") {
+                        editing = Expense(tripID: trip.id, spentOn: trip.departDate ?? Date())
+                    }
+                    Button("Currency converter", systemImage: "dollarsign.arrow.circlepath") {
+                        showConverter = true
+                    }
+                } label: {
                     Image(systemName: "plus.circle.fill").font(.title3)
                 }
                 .tint(Theme.Colors.brand)
@@ -24,6 +33,7 @@ struct TripExpensesSection: View {
                     .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
             } else {
                 summary
+                if categoryTotals.count > 1 { categoryChart }
                 ForEach(byCategory, id: \.category) { group in
                     VStack(alignment: .leading, spacing: 4) {
                         Label(group.category, systemImage: ExpenseCategory.icon(for: group.category))
@@ -44,6 +54,35 @@ struct TripExpensesSection: View {
         .sheet(item: $editing) { exp in
             ExpenseEditView(store: store, expense: exp, travelerNames: trip.travelers ?? [])
         }
+        .sheet(isPresented: $showConverter) { CurrencyConverterView() }
+    }
+
+    // MARK: Category breakdown chart
+
+    private var categoryTotals: [(category: String, total: Double)] {
+        byCategory
+            .map { (category: $0.category, total: $0.items.reduce(0) { $0 + $1.amount }) }
+            .sorted { $0.total > $1.total }
+    }
+
+    private var categoryChart: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("By category").font(.subheadline.bold()).foregroundStyle(.secondary)
+            Chart(categoryTotals, id: \.category) { row in
+                BarMark(
+                    x: .value("Amount", row.total),
+                    y: .value("Category", row.category))
+                .foregroundStyle(Theme.Colors.brand.gradient)
+                .annotation(position: .trailing, alignment: .leading) {
+                    Text(TripFormat.money(row.total) ?? "").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .chartXAxis(.hidden)
+            .frame(height: CGFloat(categoryTotals.count) * 34 + 10)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var summary: some View {

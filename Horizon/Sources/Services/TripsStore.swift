@@ -98,6 +98,27 @@ final class TripsStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Persists a picked location (name + address + maps URL) into the shared
+    /// `fam_places` library, unless a same-named place already exists. Used when
+    /// a date-night stop is chosen via LocationSearchSheet so it's reusable
+    /// across dates and trips. Returns the existing or newly-created place.
+    @discardableResult
+    func saveIfNew(familyID: UUID, name: String, address: String?, mapsURL: String?) async -> Place? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let existing = places.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        let place = Place(familyID: familyID, name: trimmed,
+                          address: address?.nilIfBlank, mapsURL: mapsURL?.nilIfBlank)
+        do {
+            let row: Place = try await supabase.from("fam_places")
+                .insert(place).select().single().execute().value
+            places.append(row); places.sort { $0.name < $1.name }
+            return row
+        } catch { return nil }
+    }
+
     /// Inserts a place and returns it (for inline "add new" in location pickers).
     @discardableResult
     func createPlace(familyID: UUID, name: String) async -> Place? {

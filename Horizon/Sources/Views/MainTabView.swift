@@ -9,6 +9,12 @@ struct MainTabView: View {
             SomedayView()
                 .tabItem { Label("Someday", systemImage: "map") }
 
+            DatesView()
+                .tabItem { Label("Dates", systemImage: "heart") }
+
+            EventsListView()
+                .tabItem { Label("Countdown", systemImage: "calendar.badge.clock") }
+
             NotesTabView()
                 .tabItem { Label("Notes", systemImage: "note.text") }
 

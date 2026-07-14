@@ -14,6 +14,7 @@ struct TripDetailView: View {
     @State private var editingDay: ItineraryDay?
     @State private var coverItem: PhotosPickerItem?
     @State private var showMemories = false
+    @State private var showMoodBoard = false
     @State private var coverError: String?
 
     init(trip: Trip) {
@@ -54,6 +55,7 @@ struct TripDetailView: View {
                     Button("Duplicate trip", systemImage: "plus.square.on.square") {
                         Task { await duplicate() }
                     }
+                    Button("Mood Board", systemImage: "square.grid.2x2") { showMoodBoard = true }
                     Button("Memories", systemImage: "photo.on.rectangle.angled") { showMemories = true }
                     if current.isUpcoming, current.departDate != nil, TripLiveActivityManager.isSupported {
                         if TripLiveActivityManager.isRunning(tripName: current.name) {
@@ -80,6 +82,9 @@ struct TripDetailView: View {
         }
         .sheet(isPresented: $showMemories) {
             MemoriesView(store: detail, tripName: current.name)
+        }
+        .sheet(isPresented: $showMoodBoard) {
+            TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
         }
         .confirmationDialog("Delete this trip?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Trip", role: .destructive) {

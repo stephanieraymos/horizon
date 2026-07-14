@@ -9,6 +9,7 @@ struct HomeView: View {
     @Environment(EventsStore.self) private var events
     @Environment(FamilyStore.self) private var family
     @Environment(DashboardStore.self) private var dashboard
+    @AppStorage("notifications.enabled") private var notificationsEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -43,6 +44,10 @@ struct HomeView: View {
                 if events.events.isEmpty { await events.load() }
                 if family.members.isEmpty { await family.load() }
                 await dashboard.load()
+                await NotificationManager.sync(trips: trips.upcoming,
+                                               reservations: dashboard.upcomingReservations,
+                                               dates: dates.upcoming,
+                                               enabled: notificationsEnabled)
             }
             .refreshable {
                 await trips.load(); await dates.load(); await events.load(); await dashboard.load()

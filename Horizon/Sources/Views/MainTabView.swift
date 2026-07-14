@@ -49,10 +49,18 @@ private struct SettingsTab: View {
     @Environment(FamilyStore.self) private var family
     @State private var showTemplates = false
     @State private var showTravelers = false
+    @AppStorage("notifications.enabled") private var notificationsEnabled = true
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle("Trip reminders", isOn: $notificationsEnabled)
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("Reminders to start packing, plus the night before a reservation and a heads-up before a date.")
+                }
                 Section("Trip planning") {
                     Button {
                         showTemplates = true
@@ -80,6 +88,11 @@ private struct SettingsTab: View {
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: notificationsEnabled) { _, enabled in
+                if !enabled {
+                    Task { await NotificationManager.sync(trips: [], reservations: [], dates: [], enabled: false) }
+                }
+            }
             .sheet(isPresented: $showTemplates) { PackingTemplatesView() }
             .sheet(isPresented: $showTravelers) { TravelerProfilesView() }
         }

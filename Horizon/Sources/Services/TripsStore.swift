@@ -103,13 +103,22 @@ final class TripsStore {
     /// a date-night stop is chosen via LocationSearchSheet so it's reusable
     /// across dates and trips. Returns the existing or newly-created place.
     @discardableResult
-    func saveIfNew(familyID: UUID, name: String, address: String?, mapsURL: String?) async -> Place? {
+    func saveIfNew(familyID: UUID, name: String, address: String?, mapsURL: String?,
+                   category: String? = nil) async -> Place? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         if let existing = places.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            // Backfill address/category on an existing bare place.
+            if existing.address?.nilIfBlank == nil, let addr = address?.nilIfBlank {
+                var updated = existing; updated.address = addr
+                updated.mapsURL = mapsURL?.nilIfBlank ?? existing.mapsURL
+                updated.category = category?.nilIfBlank ?? existing.category
+                await savePlace(updated)
+                return updated
+            }
             return existing
         }
-        let place = Place(familyID: familyID, name: trimmed,
+        let place = Place(familyID: familyID, name: trimmed, category: category?.nilIfBlank,
                           address: address?.nilIfBlank, mapsURL: mapsURL?.nilIfBlank)
         do {
             let row: Place = try await supabase.from("fam_places")

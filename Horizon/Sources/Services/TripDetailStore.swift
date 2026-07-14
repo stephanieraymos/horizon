@@ -16,6 +16,7 @@ final class TripDetailStore {
     var documents: [TripDocument] = []
     var purchases: [TripPurchase] = []
     var todos: [TripTodo] = []
+    var tripPlaces: [TripPlace] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -36,6 +37,34 @@ final class TripDetailStore {
         documents = await fetchDocuments()
         purchases = await fetchPurchases()
         todos = await fetchTodos()
+        tripPlaces = await fetchTripPlaces()
+    }
+
+    // MARK: Trip places (multiple destinations)
+
+    private func fetchTripPlaces() async -> [TripPlace] {
+        do {
+            return try await supabase.from("fam_trip_places")
+                .select().eq("trip_id", value: tripID).order("sort").execute().value
+        } catch { return [] }
+    }
+
+    /// Links a place to this trip (idempotent on the unique trip/place pair).
+    func linkPlace(placeID: UUID, familyID: UUID) async {
+        guard !tripPlaces.contains(where: { $0.placeID == placeID }) else { return }
+        let row = TripPlace(tripID: tripID, placeID: placeID, familyID: familyID,
+                            sort: (tripPlaces.map(\.sort).max() ?? -1) + 1)
+        do {
+            try await supabase.from("fam_trip_places").insert(row).execute()
+            tripPlaces.append(row)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func unlinkPlace(_ tripPlace: TripPlace) async {
+        do {
+            try await supabase.from("fam_trip_places").delete().eq("id", value: tripPlace.id).execute()
+            tripPlaces.removeAll { $0.id == tripPlace.id }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     // MARK: To-dos (pre-trip checklist)

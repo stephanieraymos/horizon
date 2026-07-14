@@ -40,6 +40,7 @@ struct TripDetailView: View {
                 if !passportWarnings.isEmpty { passportCallout }
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
+                TripPlacesSection(store: detail, familyID: current.familyID)
                 TripWeatherSection(
                     trip: current,
                     destinationName: trips.destination(for: current)?.name ?? current.destination)
@@ -422,6 +423,12 @@ struct TripDetailView: View {
         for r in detail.reservations {
             if let addr = r.address?.nilIfBlank {
                 out.append((r.title, addr, r.type.systemImage))
+            }
+        }
+        for tp in detail.tripPlaces {
+            if let place = trips.places.first(where: { $0.id == tp.placeID }),
+               let addr = place.address?.nilIfBlank {
+                out.append((place.name, addr, place.categoryIcon))
             }
         }
         for day in detail.itinerary {

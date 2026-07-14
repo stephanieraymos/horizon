@@ -9,6 +9,7 @@ struct HorizonApp: App {
     @State private var dates = DateNightsStore()
     @State private var events = EventsStore()
     @State private var packingTemplates = PackingTemplatesStore()
+    @State private var travelerProfiles = TravelerProfilesStore()
 
     init() {
         // Give the shared image disk cache real capacity so photos are fetched
@@ -27,6 +28,7 @@ struct HorizonApp: App {
                 .environment(dates)
                 .environment(events)
                 .environment(packingTemplates)
+                .environment(travelerProfiles)
         }
         #if targetEnvironment(macCatalyst)
         .defaultSize(width: 1100, height: 800)

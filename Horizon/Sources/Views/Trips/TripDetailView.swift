@@ -5,6 +5,7 @@ struct TripDetailView: View {
     let trip: Trip
     @Environment(TripsStore.self) private var trips
     @Environment(FamilyStore.self) private var family
+    @Environment(TravelerProfilesStore.self) private var travelerProfiles
     @Environment(\.dismiss) private var dismiss
 
     @State private var detail: TripDetailStore
@@ -31,6 +32,7 @@ struct TripDetailView: View {
                 coverBanner
                 header
                 travelersStrip
+                if !passportWarnings.isEmpty { passportCallout }
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
                 if current.isSomeday { somedayCallout }
@@ -74,6 +76,10 @@ struct TripDetailView: View {
             }
         }
         .task { await detail.load() }
+        .task {
+            if family.members.isEmpty { await family.load() }
+            if travelerProfiles.profiles.isEmpty { await travelerProfiles.load() }
+        }
         .sheet(isPresented: $showEdit) { TripEditView(trip: current) }
         .sheet(item: $editingReservation) { res in
             ReservationEditView(reservation: res).environment(detail)
@@ -92,6 +98,41 @@ struct TripDetailView: View {
                 Task { await trips.delete(current); dismiss() }
             }
         }
+    }
+
+    // MARK: Passport expiry warnings
+
+    /// Travelers on this trip whose passport is expired or within 6 months of
+    /// the departure date.
+    private var passportWarnings: [(name: String, warning: PassportWarning)] {
+        guard current.departDate != nil || !current.isSomeday else { return [] }
+        let names = current.travelers ?? []
+        return names.compactMap { name in
+            guard let member = family.members.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }),
+                  let profile = travelerProfiles.profile(for: member.id),
+                  let warning = profile.passportValidityWarning(forDeparture: current.departDate)
+            else { return nil }
+            return (name, warning)
+        }
+    }
+
+    private var passportCallout: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Passport check", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.bold())
+                .foregroundStyle(.orange)
+            ForEach(passportWarnings, id: \.name) { w in
+                Text(w.warning == .expired
+                     ? "\(w.name)'s passport is expired."
+                     : "\(w.name)'s passport expires within 6 months of departure — some countries require 6 months' validity.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: Header + overview

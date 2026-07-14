@@ -45,6 +45,7 @@ private struct SettingsTab: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(FamilyStore.self) private var family
     @State private var showTemplates = false
+    @State private var showTravelers = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +55,11 @@ private struct SettingsTab: View {
                         showTemplates = true
                     } label: {
                         Label("Packing Templates", systemImage: "suitcase.fill")
+                    }
+                    Button {
+                        showTravelers = true
+                    } label: {
+                        Label("Travelers & Documents", systemImage: "person.text.rectangle")
                     }
                 }
                 Section("Account") {
@@ -72,6 +78,7 @@ private struct SettingsTab: View {
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $showTemplates) { PackingTemplatesView() }
+            .sheet(isPresented: $showTravelers) { TravelerProfilesView() }
         }
     }
 }

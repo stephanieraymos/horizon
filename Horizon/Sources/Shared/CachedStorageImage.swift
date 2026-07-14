@@ -24,16 +24,10 @@ struct CachedStorageImage<Placeholder: View>: View {
     }
 
     private func load() async {
-        guard let path, let key = NSURL(string: "trip-docs:///\(path)") else { image = nil; return }
-        if let cached = HorizonImageLoader.memory.object(forKey: key) { image = cached; return }
-        do {
-            let url = try await StorageService.signedURL(path: path)
-            let (data, _) = try await HorizonImageLoader.session.data(from: url)
-            guard !Task.isCancelled, let ui = UIImage(data: data) else { return }
-            HorizonImageLoader.memory.setObject(ui, forKey: key)
-            image = ui
-        } catch {
-            // Keep placeholder; transient failures shouldn't disrupt the list.
-        }
+        guard let path else { image = nil; return }
+        // Memory → disk → network, keyed by the stable storage path so a private
+        // object is fetched once across app launches (not once per launch).
+        let ui = await HorizonImageLoader.cachedStorageImage(path: path)
+        if !Task.isCancelled { image = ui }
     }
 }

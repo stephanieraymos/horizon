@@ -47,13 +47,43 @@ enum HorizonImageLoader {
             memory.setObject(ui, forKey: url as NSURL)
             return ui
         } else {
-            guard let key = NSURL(string: "trip-docs:///\(cover)") else { return nil }
-            if let c = memory.object(forKey: key) { return c }
-            guard let url = try? await StorageService.signedURL(path: cover),
-                  let (data, _) = try? await session.data(from: url), let ui = UIImage(data: data) else { return nil }
+            return await cachedStorageImage(path: cover)
+        }
+    }
+
+    // MARK: Private-object disk cache (keyed by stable storage path)
+
+    private static let diskDir: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("horizon-img", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static func diskURL(forPath path: String) -> URL {
+        diskDir.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
+    }
+
+    /// Memory → disk → network fetch for a private Storage object, keyed by its
+    /// stable PATH (signed URLs rotate, so we never key on the URL). Result: one
+    /// network fetch per object across app launches, not once per launch — the
+    /// egress win. iOS purges the Caches dir under storage pressure.
+    static func cachedStorageImage(path: String) async -> UIImage? {
+        guard let key = NSURL(string: "trip-docs:///\(path)") else { return nil }
+        if let mem = memory.object(forKey: key) { return mem }
+        let file = diskURL(forPath: path)
+        if let data = try? Data(contentsOf: file), let ui = UIImage(data: data) {
             memory.setObject(ui, forKey: key)
             return ui
         }
+        do {
+            let url = try await StorageService.signedURL(path: path)
+            let (data, _) = try await session.data(from: url)
+            guard let ui = UIImage(data: data) else { return nil }
+            memory.setObject(ui, forKey: key)
+            try? data.write(to: file, options: .atomic)
+            return ui
+        } catch { return nil }
     }
 }
 

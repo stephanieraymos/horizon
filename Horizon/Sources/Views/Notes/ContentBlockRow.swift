@@ -454,19 +454,14 @@ private struct ImageBlockView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if block.filePath != nil {
-                if let url {
-                    AsyncImage(url: url) { img in
-                        img.resizable().scaledToFit()
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 10).fill(Color.systemFill6)
-                            .frame(height: 160).overlay { ProgressView() }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                } else {
+            if let path = block.filePath {
+                // Egress-safe: path-keyed cache (memory → disk → network once).
+                CachedStorageImage(path: path) {
                     RoundedRectangle(cornerRadius: 10).fill(Color.systemFill6)
                         .frame(height: 160).overlay { ProgressView() }
                 }
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 TextField("Caption (optional)", text: $block.textValue)
                     .font(.caption).foregroundStyle(.secondary)
             } else {

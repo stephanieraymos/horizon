@@ -71,7 +71,10 @@ struct PackingItem: Codable, Identifiable, Hashable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(tripID, forKey: .tripID)
-        try c.encodeIfPresent(memberID, forKey: .memberID)
+        // Encode an explicit null when nil ("Everyone") so an upsert actually
+        // clears the previous person instead of leaving the column unchanged.
+        if let memberID { try c.encode(memberID, forKey: .memberID) }
+        else { try c.encodeNil(forKey: .memberID) }
         try c.encode(item, forKey: .item)
         try c.encode(checked, forKey: .checked)
         try c.encode(autoSuggested, forKey: .autoSuggested)

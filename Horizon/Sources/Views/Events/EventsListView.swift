@@ -46,9 +46,20 @@ struct EventsListView: View {
         }
     }
 
-    /// Birthdays are always annual, so daysAway ≥ 0. Merge with DB upcoming and sort.
+    /// Match key so a real event "covers" a synthetic birthday when they share a
+    /// title and the same month/day (a birthday you've turned into an event).
+    private func eventKey(_ e: FamilyEvent) -> String {
+        let c = Calendar.current.dateComponents([.month, .day], from: e.eventDate)
+        return "\(e.title.lowercased())|\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+
+    /// Birthdays are always annual, so daysAway ≥ 0. Merge with DB upcoming and
+    /// sort — dropping synthetic birthdays already covered by a real event so the
+    /// same day doesn't show as two rows.
     private var allUpcoming: [FamilyEvent] {
-        (events.upcoming + birthdayEvents)
+        let realKeys = Set(events.upcoming.map(eventKey))
+        let synthetic = birthdayEvents.filter { !realKeys.contains(eventKey($0)) }
+        return (events.upcoming + synthetic)
             .filter(passesFilter)
             .sorted { $0.daysAway < $1.daysAway }
     }

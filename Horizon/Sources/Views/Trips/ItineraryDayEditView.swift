@@ -8,6 +8,18 @@ struct ItineraryDayEditView: View {
 
     init(day: ItineraryDay) { _draft = State(initialValue: day) }
 
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+    private var defaultTime: Date {
+        Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+    }
+    /// Parses a stored clock string ("9:00 AM"); nil for word slots or all-day.
+    private func parsedTime(_ s: String?) -> Date? { s.flatMap { Self.clock.date(from: $0) } }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -28,9 +40,21 @@ struct ItineraryDayEditView: View {
                                         .tint(activity.time == slot ? Theme.Colors.brand : .secondary)
                                 }
                             }
-                            TextField("Time (e.g. 9:00 AM)", text: Binding(
-                                get: { activity.time ?? "" }, set: { activity.time = $0.nilIfBlank }))
+                            Toggle("Set a time", isOn: Binding(
+                                get: { parsedTime(activity.time) != nil },
+                                set: { on in
+                                    activity.time = on
+                                        ? Self.clock.string(from: parsedTime(activity.time) ?? defaultTime)
+                                        : nil
+                                }))
                                 .font(.callout)
+                            if let t = parsedTime(activity.time) {
+                                DatePicker("Time", selection: Binding(
+                                    get: { t },
+                                    set: { activity.time = Self.clock.string(from: $0) }),
+                                    displayedComponents: .hourAndMinute)
+                                    .font(.callout)
+                            }
                             TextField("Location", text: Binding(
                                 get: { activity.locationName ?? "" }, set: { activity.locationName = $0.nilIfBlank }))
                                 .font(.callout).foregroundStyle(.secondary)

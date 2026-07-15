@@ -521,7 +521,12 @@ private struct ReservationCard: View {
         guard let start = reservation.startAt else { return nil }
         let s = start.formatted(.dateTime.month(.abbreviated).day().hour().minute())
         if let end = reservation.endAt {
-            return "\(s) → \(end.formatted(.dateTime.hour().minute()))"
+            // Include the end date when check-out is on a different day (a
+            // multi-night stay), otherwise just the time.
+            let e = Calendar.current.isDate(start, inSameDayAs: end)
+                ? end.formatted(.dateTime.hour().minute())
+                : end.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+            return "\(s) → \(e)"
         }
         return s
     }

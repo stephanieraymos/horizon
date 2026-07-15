@@ -181,15 +181,75 @@ final class TripDetailStore {
     func saveReservation(_ r: Reservation) async {
         do {
             try await supabase.from("fam_reservations").upsert(r).execute()
-            await load()
+            await syncReservationToItinerary(r)   // mirrors check-in/out; reloads
         } catch { errorMessage = error.localizedDescription }
     }
 
     func deleteReservation(_ r: Reservation) async {
         do {
             try await supabase.from("fam_reservations").delete().eq("id", value: r.id).execute()
-            reservations.removeAll { $0.id == r.id }
+            // Clear its auto-added itinerary entries (treat as a reservation with
+            // no dates), which also reloads.
+            var cleared = r; cleared.startAt = nil; cleared.endAt = nil
+            await syncReservationToItinerary(cleared)
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    private static let clockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    /// Mirrors a reservation's start/end datetimes into the itinerary as
+    /// check-in / check-out activities. Idempotent: activities are keyed by the
+    /// reservation id, so editing a reservation updates (not duplicates) them,
+    /// and clearing its dates removes them. Days emptied by removal are deleted.
+    func syncReservationToItinerary(_ r: Reservation) async {
+        let cal = Calendar.current
+        var desired: [(date: Date, activity: ItineraryActivity)] = []
+        if let start = r.startAt {
+            desired.append((cal.startOfDay(for: start),
+                ItineraryActivity(time: Self.clockFormatter.string(from: start),
+                                  title: "\(r.type.startLabel): \(r.title)",
+                                  locationName: r.address?.nilIfBlank,
+                                  reservationID: r.id)))
+        }
+        if let end = r.endAt {
+            desired.append((cal.startOfDay(for: end),
+                ItineraryActivity(time: Self.clockFormatter.string(from: end),
+                                  title: "\(r.type.endLabel): \(r.title)",
+                                  locationName: r.address?.nilIfBlank,
+                                  reservationID: r.id)))
+        }
+
+        var days = itinerary
+        let hadReservation = Set(days.filter { $0.activities.contains { $0.reservationID == r.id } }.map(\.id))
+        for i in days.indices { days[i].activities.removeAll { $0.reservationID == r.id } }
+
+        var touched = Set<UUID>()
+        for item in desired {
+            if let idx = days.firstIndex(where: { cal.isDate($0.dayDate, inSameDayAs: item.date) }) {
+                days[idx].activities.append(item.activity)
+                touched.insert(days[idx].id)
+            } else {
+                let newDay = ItineraryDay(tripID: tripID, dayDate: item.date, activities: [item.activity])
+                days.append(newDay)
+                touched.insert(newDay.id)
+            }
+        }
+
+        // Persist days we added to, plus days we removed from that still have
+        // other activities; delete days left empty by the removal.
+        let toUpsert = days.filter { touched.contains($0.id) || (hadReservation.contains($0.id) && !$0.activities.isEmpty) }
+        let toDelete = days.filter { hadReservation.contains($0.id) && $0.activities.isEmpty && !touched.contains($0.id) }
+        guard !toUpsert.isEmpty || !toDelete.isEmpty else { await load(); return }
+        do {
+            if !toUpsert.isEmpty { try await supabase.from("fam_trip_itinerary").upsert(toUpsert).execute() }
+            for day in toDelete { try await supabase.from("fam_trip_itinerary").delete().eq("id", value: day.id).execute() }
+        } catch { errorMessage = error.localizedDescription }
+        await load()
     }
 
     var reservationsByType: [(type: ReservationType, items: [Reservation])] {

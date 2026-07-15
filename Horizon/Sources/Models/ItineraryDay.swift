@@ -11,12 +11,17 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
     var mapsURL: String?
     var notes: String?
     var done: Bool?
+    /// Set when this activity was auto-generated from a reservation's check-in /
+    /// check-out, so it can be updated/removed in sync when the reservation
+    /// changes. Additive JSON key — other apps sharing the table ignore it.
+    var reservationID: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id, time, title
         case locationName = "location_name"
         case mapsURL = "maps_url"
         case notes, done
+        case reservationID = "reservation_id"
     }
 }
 

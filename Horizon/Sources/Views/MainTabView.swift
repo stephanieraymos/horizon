@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct MainTabView: View {
+    // Keep to 5 tabs: a 6th+ makes iOS collapse the extras into a "More" tab that
+    // wraps them in its own navigation controller, nesting each tab's own
+    // NavigationStack — the source of the double back button / stray back arrow /
+    // misplaced toolbar. Notes + Settings are reached from Home instead.
     var body: some View {
         TabView {
             HomeView()
@@ -17,12 +21,6 @@ struct MainTabView: View {
 
             EventsListView()
                 .tabItem { Label("Countdown", systemImage: "calendar.badge.clock") }
-
-            NotesTabView()
-                .tabItem { Label("Notes", systemImage: "note.text") }
-
-            SettingsTab()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
     }
 }
@@ -44,9 +42,11 @@ struct PlaceholderTab: View {
     }
 }
 
-private struct SettingsTab: View {
+/// Settings — presented as a sheet from Home (no longer a tab).
+struct SettingsView: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(FamilyStore.self) private var family
+    @Environment(\.dismiss) private var dismiss
     @State private var showTemplates = false
     @State private var showTravelers = false
     @AppStorage("notifications.enabled") private var notificationsEnabled = true
@@ -88,6 +88,9 @@ private struct SettingsTab: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
             .onChange(of: notificationsEnabled) { _, enabled in
                 if !enabled {
                     Task { await NotificationManager.sync(trips: [], reservations: [], dates: [], enabled: false) }

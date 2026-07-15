@@ -13,6 +13,8 @@ struct HomeView: View {
 
     @State private var path: [Trip] = []
     @State private var makeEventFor: FamilyEvent?
+    @State private var showSettings = false
+    @State private var showNotes = false
 
     private var canEdit: Bool { family.currentMember?.role == .admin }
 
@@ -48,6 +50,18 @@ struct HomeView: View {
                 .padding()
             }
             .navigationTitle(greeting)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { showNotes = true } label: { Label("Notes", systemImage: "note.text") }
+                        Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showNotes) { NotesTabView() }
+            .sheet(isPresented: $showSettings) { SettingsView() }
             .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
             .eventActions(event: $makeEventFor, allowLinkEdit: false,
                           onOpenTrip: { path.append($0) })

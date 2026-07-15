@@ -3,6 +3,7 @@ import SwiftUI
 struct NotesTabView: View {
     @Environment(TravelNotesStore.self) private var store
     @Environment(FamilyStore.self) private var family
+    @Environment(\.dismiss) private var dismiss
     @State private var editing: TravelNote?
 
     var body: some View {
@@ -31,6 +32,7 @@ struct NotesTabView: View {
             }
             .navigationTitle("Notes")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
                     Button { newNote() } label: { Image(systemName: "plus") }
                 }

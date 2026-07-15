@@ -239,11 +239,11 @@ struct TripDetailView: View {
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self) else {
-                    coverError = "Couldn't read that photo. Try a different one."
+                guard let jpeg = await item.loadUploadJPEG() else {
+                    coverError = "Couldn't read that photo. If it's stored in iCloud, open it in Photos once, then try again."
                     coverItem = nil; return
                 }
-                let ok = await trips.setTripCover(tripID: current.id, familyID: current.familyID, imageData: data)
+                let ok = await trips.setTripCover(tripID: current.id, familyID: current.familyID, imageData: jpeg)
                 if !ok { coverError = trips.errorMessage ?? "Upload failed. Check your connection." }
                 coverItem = nil
             }

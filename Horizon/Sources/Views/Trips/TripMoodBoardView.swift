@@ -182,10 +182,7 @@ struct TripMoodBoardView: View {
         defer { isPreparing = false; pickerItems = [] }
         var out: [Data] = []
         for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            if let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.82) {
-                out.append(jpeg)
-            }
+            if let jpeg = await item.loadUploadJPEG() { out.append(jpeg) }
         }
         guard !out.isEmpty else { return }
         pendingJPEGs = out

@@ -176,8 +176,7 @@ struct ReservationEditView: View {
         // Save the reservation first so the screenshot's reservation_id is valid.
         await detail.saveReservation(draft)
         for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data
+            guard let jpeg = await item.loadUploadJPEG() else { continue }
             await detail.addDocument(familyID: fid, data: jpeg, fileName: "confirmation.jpg",
                                      contentType: "image/jpeg", kind: .screenshot,
                                      reservationID: draft.id, createdBy: family.currentMember?.userID)

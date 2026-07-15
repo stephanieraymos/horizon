@@ -27,13 +27,17 @@ struct ComboField: View {
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
 
-    // With an empty query we show the FULL list while the field is active (so a
-    // tap reveals everything); typing filters it down. The typed case isn't gated
-    // on focus, so tapping a filtered suggestion never drops the selection.
+    // With an empty query we show the FULL list the moment the field is focused
+    // (so a tap reveals everything); typing filters it down. We key off `focused`
+    // directly — not the onChange-mirrored `active` — because onChange doesn't
+    // reliably fire on focus-gain, which left the list hidden until the first
+    // keystroke. `active` still lingers briefly after focus loss so a tap on a
+    // suggestion lands before the list collapses. The typed case isn't gated on
+    // focus, so tapping a filtered suggestion never drops the selection.
     private var matches: [Option] {
         let q = trimmed.lowercased()
         if q.isEmpty {
-            return active ? Array(options.sorted { $0.name < $1.name }.prefix(50)) : []
+            return (focused || active) ? Array(options.sorted { $0.name < $1.name }.prefix(50)) : []
         }
         let filtered = options.filter { $0.name.lowercased().contains(q) }
         if filtered.count == 1 && filtered[0].name.caseInsensitiveCompare(trimmed) == .orderedSame { return [] }

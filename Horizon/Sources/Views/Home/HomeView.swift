@@ -135,7 +135,11 @@ struct HomeView: View {
                 }
                 .padding(12)
             }
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .background(Color(.secondarySystemGroupedBackground))
+            // Clip the whole card (cover, dark text overlay, and background) to one
+            // rounded shape so the cover's corners match the card instead of the
+            // square-cornered image poking past the rounded background.
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
     }

@@ -4,14 +4,32 @@
 <dict>
     <!-- Mac Catalyst App Store upload. exportArchive produces a signed .pkg    -->
     <!-- that altool uploads with --type macos. Same bundle id as iOS          -->
-    <!-- (Universal Purchase). Automatic signing selects the distribution +    -->
-    <!-- Mac installer certs from the local Keychain.                          -->
+    <!-- (Universal Purchase).                                                  -->
+    <!--                                                                        -->
+    <!-- MANUAL signing (like the other Mac apps): the .app is signed with the  -->
+    <!-- Apple Distribution cert against the "Horizon Mac App Store" profile,   -->
+    <!-- and the .pkg with the 3rd Party Mac Developer Installer cert — all     -->
+    <!-- from the local Keychain, no account / cloud signing required.          -->
+    <!--                                                                        -->
+    <!-- PREREQUISITE: create a "Mac App Store" distribution provisioning       -->
+    <!-- profile named exactly "Horizon Mac App Store" for App ID               -->
+    <!-- com.stephanieraymos.horizon (Mac Catalyst, Apple Distribution cert),   -->
+    <!-- then drop it in ~/Library/MobileDevice/Provisioning Profiles/.         -->
     <key>method</key>
     <string>app-store-connect</string>
     <key>teamID</key>
     <string>FZ5HL2XU6U</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+    <key>installerSigningCertificate</key>
+    <string>3rd Party Mac Developer Installer</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.stephanieraymos.horizon</key>
+        <string>Horizon Mac App Store</string>
+    </dict>
     <key>uploadSymbols</key>
     <true/>
 </dict>

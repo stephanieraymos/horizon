@@ -61,13 +61,15 @@ xcodebuild archive \
   -quiet
 
 echo "▶  Exporting .pkg..."
-# See the iOS script: export relies on Xcode's logged-in account for
-# distribution signing (the ASC API key can't do cloud-managed distribution).
+# Manual signing: ExportOptions-mac.plist pins the "Horizon Mac App Store"
+# provisioning profile + Apple Distribution cert, so the export signs entirely
+# from the local keychain — no Xcode account or cloud-managed distribution
+# signing (the shared ASC API key lacks the App Manager role for that). This
+# mirrors how the other Mac apps (SpectMac, bread-mac, orbit-mac) ship.
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
   -exportOptionsPlist ExportOptions-mac.plist \
-  -allowProvisioningUpdates \
   -quiet
 
 PKG=$(find "$EXPORT_PATH" -name '*.pkg' | head -1)

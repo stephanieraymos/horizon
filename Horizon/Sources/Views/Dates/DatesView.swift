@@ -11,31 +11,39 @@ struct DatesView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if !dates.upcoming.isEmpty {
-                    Section(header: upcomingHeader) {
-                        ForEach(dates.upcoming) { d in row(for: d) }
-                    }
-                }
-                if !dates.ideas.isEmpty {
-                    Section("Ideas") {
-                        ForEach(dates.ideas) { d in row(for: d) }
-                    }
-                }
-                if !dates.past.isEmpty {
-                    Section("Past") {
-                        ForEach(dates.past) { d in row(for: d) }
-                    }
-                }
+            Group {
                 if dates.dates.isEmpty {
-                    ContentUnavailableView(
-                        "No dates yet",
-                        systemImage: "heart",
-                        description: Text("Save ideas for dates, then schedule them when you're ready.")
-                    )
+                    emptyState
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            if !dates.upcoming.isEmpty {
+                                sectionHeader("Upcoming", systemImage: "heart.fill", color: .pink)
+                                if let hero = dates.upcoming.first {
+                                    card(hero) { HeroDateCard(date: hero) }
+                                }
+                                ForEach(Array(dates.upcoming.dropFirst())) { d in
+                                    card(d) { DateCard(date: d) }
+                                }
+                            }
+                            if !dates.ideas.isEmpty {
+                                sectionHeader("Ideas", systemImage: "lightbulb.fill", color: .yellow)
+                                    .padding(.top, 6)
+                                ForEach(dates.ideas) { d in card(d) { DateCard(date: d) } }
+                            }
+                            if !dates.past.isEmpty {
+                                sectionHeader("Memories", systemImage: "sparkles", color: Theme.Colors.brand)
+                                    .padding(.top, 6)
+                                ForEach(dates.past) { d in card(d) { DateCard(date: d) } }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
+                    }
+                    .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                    .refreshable { await dates.load() }
                 }
             }
-            .listStyle(.insetGrouped)
             .navigationTitle("Dates")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -43,103 +51,182 @@ struct DatesView: View {
                 }
             }
             .task { if dates.dates.isEmpty { await dates.load() } }
-            .refreshable { await dates.load() }
             .sheet(item: $editing) { DateNightEditView(existing: $0) }
             .sheet(isPresented: $creating) { DateNightEditView(existing: nil) }
         }
     }
 
-    @ViewBuilder
-    private var upcomingHeader: some View {
-        if let next = dates.upcoming.first, let when = next.scheduledAt {
-            let cal = Calendar.current
-            let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: when)).day ?? 0
-            if days >= 0 && days <= 30 {
-                Text("Upcoming — date in \(days) day\(days == 1 ? "" : "s")")
-            } else {
-                Text("Upcoming")
+    private func card<Content: View>(_ d: DateNight, @ViewBuilder _ content: () -> Content) -> some View {
+        Button { editing = d } label: { content() }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button("Edit", systemImage: "pencil") { editing = d }
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    Task { await dates.delete(d) }
+                }
             }
-        } else {
-            Text("Upcoming")
+    }
+
+    private func sectionHeader(_ title: String, systemImage: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage).foregroundStyle(color)
+            Text(title).font(.title3.bold())
+            Spacer()
         }
     }
 
-    private func row(for d: DateNight) -> some View {
-        Button { editing = d } label: { DateRow(date: d) }
-            .buttonStyle(.plain)
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    Task { await dates.delete(d) }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No dates yet", systemImage: "heart.text.square")
+        } description: {
+            Text("Save ideas for dates, then schedule them when you're ready.")
+        } actions: {
+            Button { creating = true } label: {
+                Text("Add a date idea").fontWeight(.semibold)
             }
+            .buttonStyle(.borderedProminent).tint(.pink)
+        }
     }
 }
 
-private struct DateRow: View {
+// MARK: - Category styling
+
+/// Icon + accent color per date "vibe". Unknown/empty falls back to a warm pink.
+private func dateCategoryStyle(_ category: String?) -> (icon: String, color: Color) {
+    switch DateNightCategory(rawValue: category ?? "") {
+    case .dinner:    return ("fork.knife", .orange)
+    case .activity:  return ("figure.walk", .teal)
+    case .stayIn:    return ("sofa.fill", .indigo)
+    case .adventure: return ("mountain.2.fill", .green)
+    case .none:      return ("heart.fill", .pink)
+    }
+}
+
+/// "Today" / "Tomorrow" / "in N days" for the next ~two months, else nil.
+private func dateCountdownText(_ when: Date?) -> String? {
+    guard let when else { return nil }
+    let cal = Calendar.current
+    let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()),
+                                  to: cal.startOfDay(for: when)).day ?? 0
+    switch days {
+    case ..<0:   return nil
+    case 0:      return "Today"
+    case 1:      return "Tomorrow"
+    case 2...60: return "in \(days) days"
+    default:     return nil
+    }
+}
+
+/// Featured card for the next upcoming date — a category-tinted gradient with a
+/// countdown pill, so the "what's next" jumps out.
+private struct HeroDateCard: View {
     let date: DateNight
+    private var style: (icon: String, color: Color) { dateCategoryStyle(date.category) }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(date.title).font(.headline).fixedSize(horizontal: false, vertical: true)
-                // Chips + location wrap onto multiple lines instead of squishing.
-                FlowLayout(spacing: 6) {
-                    if let cat = date.category {
-                        Text(cat).font(.caption)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color(.tertiarySystemFill), in: Capsule())
-                            .foregroundStyle(.secondary)
-                    }
-                    if let locName = date.primaryLocationName {
-                        Label(locName, systemImage: "mappin.and.ellipse")
-                            .font(.caption).foregroundStyle(.tertiary)
-                            .lineLimit(1)
+        ZStack {
+            LinearGradient(colors: [style.color, style.color.opacity(0.6)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [.clear, .black.opacity(0.28)],
+                           startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Label(date.category ?? "Date", systemImage: style.icon)
+                        .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.white.opacity(0.22), in: Capsule())
+                    Spacer()
+                    if let cd = dateCountdownText(date.scheduledAt) {
+                        Text(cd).font(.caption.weight(.bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(.white.opacity(0.22), in: Capsule())
                     }
                 }
-                if let dests = date.destinations, dests.count > 1 {
-                    Text("\(dests.count) stops").font(.caption2).foregroundStyle(.tertiary)
-                }
-            }
-            Spacer(minLength: 8)
-            // Date/time + rating in a clean trailing column.
-            VStack(alignment: .trailing, spacing: 3) {
-                if let when = date.scheduledAt {
-                    Text(dayLabel(when)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Text(timeLabel(when)).font(.caption2).foregroundStyle(.tertiary)
-                }
-                if let rating = date.rating, date.isPast {
-                    HStack(spacing: 1) {
-                        ForEach(1..<6) { i in
-                            Image(systemName: i <= rating ? "star.fill" : "star").font(.caption2)
+                Spacer(minLength: 24)
+                Text(date.title).font(.title2.bold()).foregroundStyle(.white).lineLimit(2)
+                if date.primaryLocationName != nil || date.scheduledAt != nil {
+                    HStack(spacing: 12) {
+                        if let loc = date.primaryLocationName {
+                            Label(loc, systemImage: "mappin.and.ellipse").lineLimit(1)
+                        }
+                        if let when = date.scheduledAt {
+                            Label(when.formatted(.dateTime.weekday(.abbreviated).hour().minute()),
+                                  systemImage: "clock")
                         }
                     }
-                    .foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(.white.opacity(0.95))
+                    .padding(.top, 4)
                 }
             }
-            .fixedSize()
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 2)
+        .frame(height: 160)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: style.color.opacity(0.35), radius: 10, x: 0, y: 5)
     }
-    private var icon: String {
-        if date.ideaOnly { return "lightbulb" }
-        if date.isPast { return "clock" }
-        return "heart.fill"
+}
+
+/// Standard elevated card for upcoming (beyond the hero), ideas, and memories.
+private struct DateCard: View {
+    let date: DateNight
+    private var style: (icon: String, color: Color) { dateCategoryStyle(date.category) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12).fill(style.color.opacity(0.15))
+                Image(systemName: style.icon).font(.title3).foregroundStyle(style.color)
+            }
+            .frame(width: 46, height: 46)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(date.title).font(.headline).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                FlowLayout(spacing: 6) {
+                    if let cat = date.category {
+                        Text(cat).font(.caption2.weight(.medium))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(style.color.opacity(0.15), in: Capsule())
+                            .foregroundStyle(style.color)
+                    }
+                    if let loc = date.primaryLocationName {
+                        Label(loc, systemImage: "mappin.and.ellipse")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    if let dests = date.destinations, dests.count > 1 {
+                        Text("\(dests.count) stops").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+            trailing.fixedSize()
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
-    private var color: Color {
-        if date.ideaOnly { return .yellow }
-        if date.isPast { return .secondary }
-        return .pink
-    }
-    private func dayLabel(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: d)
-    }
-    private func timeLabel(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: d)
+
+    @ViewBuilder private var trailing: some View {
+        if date.isPast, let rating = date.rating {
+            HStack(spacing: 1) {
+                ForEach(1..<6) { i in
+                    Image(systemName: i <= rating ? "star.fill" : "star").font(.caption2)
+                }
+            }
+            .foregroundStyle(.orange)
+        } else if let when = date.scheduledAt {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(when.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.caption.weight(.semibold))
+                Text(when.formatted(.dateTime.hour().minute()))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        } else if date.ideaOnly {
+            Image(systemName: "calendar.badge.plus")
+                .font(.body).foregroundStyle(style.color)
+        }
     }
 }
 

@@ -116,12 +116,16 @@ struct TripExpensesSection: View {
                 }
             }
 
-            Divider()
-            ForEach(store.perMemberTotals, id: \.memberID) { row in
-                HStack {
-                    Text(family.memberName(id: row.memberID) ?? "Someone").font(.callout)
-                    Spacer()
-                    Text(TripFormat.money(row.amount) ?? "$0").font(.callout).foregroundStyle(.secondary)
+            // Only separate the per-member breakdown when there is one — avoids a
+            // dangling line under "Spent so far" on a trip with no spending.
+            if !store.perMemberTotals.isEmpty {
+                Divider()
+                ForEach(store.perMemberTotals, id: \.memberID) { row in
+                    HStack {
+                        Text(family.memberName(id: row.memberID) ?? "Someone").font(.callout)
+                        Spacer()
+                        Text(TripFormat.money(row.amount) ?? "$0").font(.callout).foregroundStyle(.secondary)
+                    }
                 }
             }
 

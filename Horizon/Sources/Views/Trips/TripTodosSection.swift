@@ -8,6 +8,7 @@ struct TripTodosSection: View {
     @Environment(FamilyStore.self) private var family
 
     @State private var showAdd = false
+    @State private var editing: TripTodo?
 
     private var remaining: Int { store.todos.filter { !$0.done }.count }
 
@@ -35,15 +36,21 @@ struct TripTodosSection: View {
                     .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
             } else {
                 ForEach(store.todos) { todo in
-                    TodoRow(todo: todo) { Task { await store.toggleTodo(todo) } }
+                    TodoRow(todo: todo,
+                            onToggle: { Task { await store.toggleTodo(todo) } },
+                            onEdit: { editing = todo })
                         .contextMenu {
+                            Button("Edit") { editing = todo }
                             Button("Delete", role: .destructive) { Task { await store.deleteTodo(todo) } }
                         }
                 }
             }
         }
         .sheet(isPresented: $showAdd) {
-            TodoAddView(store: store, familyID: familyID)
+            TodoAddView(store: store, familyID: familyID, existing: nil)
+        }
+        .sheet(item: $editing) { todo in
+            TodoAddView(store: store, familyID: familyID, existing: todo)
         }
     }
 }
@@ -51,6 +58,7 @@ struct TripTodosSection: View {
 private struct TodoRow: View {
     let todo: TripTodo
     let onToggle: () -> Void
+    let onEdit: () -> Void
 
     private var overdue: Bool {
         guard let due = todo.dueDate, !todo.done else { return false }
@@ -58,30 +66,37 @@ private struct TodoRow: View {
     }
 
     var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 10) {
+        HStack(spacing: 10) {
+            Button(action: onToggle) {
                 Image(systemName: todo.done ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(todo.done ? Theme.Colors.brand : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(todo.title)
-                        .strikethrough(todo.done)
-                        .foregroundStyle(todo.done ? .secondary : .primary)
-                    if let due = todo.dueDate {
-                        Text(due, format: .dateTime.month(.abbreviated).day().year())
-                            .font(.caption)
-                            .foregroundStyle(overdue ? .red : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onEdit) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(todo.title)
+                            .strikethrough(todo.done)
+                            .foregroundStyle(todo.done ? .secondary : .primary)
+                        if let due = todo.dueDate {
+                            Text(due, format: .dateTime.month(.abbreviated).day().year())
+                                .font(.caption)
+                                .foregroundStyle(overdue ? .red : .secondary)
+                        }
+                    }
+                    Spacer()
+                    if overdue {
+                        Text("Overdue").font(.caption2.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.red.opacity(0.12), in: Capsule())
                     }
                 }
-                Spacer()
-                if overdue {
-                    Text("Overdue").font(.caption2.weight(.semibold))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.red.opacity(0.12), in: Capsule())
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .padding(.vertical, 3)
     }
 }
@@ -89,12 +104,20 @@ private struct TodoRow: View {
 private struct TodoAddView: View {
     let store: TripDetailStore
     let familyID: UUID
+    let existing: TripTodo?
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
 
-    @State private var title = ""
-    @State private var hasDue = false
-    @State private var due = Date()
+    @State private var title: String
+    @State private var hasDue: Bool
+    @State private var due: Date
+
+    init(store: TripDetailStore, familyID: UUID, existing: TripTodo?) {
+        self.store = store; self.familyID = familyID; self.existing = existing
+        _title = State(initialValue: existing?.title ?? "")
+        _hasDue = State(initialValue: existing?.dueDate != nil)
+        _due = State(initialValue: existing?.dueDate ?? Date())
+    }
 
     var body: some View {
         NavigationStack {
@@ -107,17 +130,20 @@ private struct TodoAddView: View {
                     }
                 }
             }
-            .navigationTitle("New Task")
+            .navigationTitle(existing == nil ? "New Task" : "Edit Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        let todo = TripTodo(tripID: store.tripID, familyID: familyID,
+                    Button(existing == nil ? "Add" : "Save") {
+                        // Preserve done/sort/createdBy when editing; upsert by id.
+                        let todo = TripTodo(id: existing?.id ?? UUID(),
+                                            tripID: store.tripID, familyID: familyID,
                                             title: title.trimmingCharacters(in: .whitespaces),
+                                            done: existing?.done ?? false,
                                             dueDate: hasDue ? due : nil,
-                                            sort: store.todos.count,
-                                            createdBy: family.currentMember?.userID)
+                                            sort: existing?.sort ?? store.todos.count,
+                                            createdBy: existing?.createdBy ?? family.currentMember?.userID)
                         Task { await store.saveTodo(todo); dismiss() }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)

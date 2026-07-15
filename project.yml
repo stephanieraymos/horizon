@@ -53,6 +53,9 @@ targets:
         SUPPORTS_MACCATALYST: "YES"
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        # Mac App Store requires the App Sandbox; scope the entitlements to the
+        # macOS (Catalyst) SDK only so the iOS build is unaffected.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Horizon/Horizon-Mac.entitlements
       configs:
         Release:
           CODE_SIGN_STYLE: Automatic

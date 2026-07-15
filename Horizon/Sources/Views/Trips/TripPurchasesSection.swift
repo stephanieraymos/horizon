@@ -2,17 +2,34 @@ import SwiftUI
 
 /// The Shopping view — items still to buy (unified `fam_trip_expenses` rows with
 /// a non-purchased status). Checking one off marks it purchased, moving it into
-/// Expenses and the budget.
+/// Expenses and the budget. Items can be grouped by tag or by store, and filtered
+/// to a single store.
 struct TripPurchasesSection: View {
     let store: TripDetailStore
     let familyID: UUID
     @Environment(FamilyStore.self) private var family
+    @Environment(TripsStore.self) private var trips
     @State private var editing: Expense?
+
+    @AppStorage("shopping.groupByStore") private var groupByStore = false
+    @State private var storeFilter: String?
 
     private static let defaultTags = ["Food / Kitchen", "Gear / Tools", "Clothing", "Toiletries", "Other"]
 
     private func newItem() -> Expense {
         Expense(tripID: store.tripID, category: ExpenseCategory.merch.rawValue, status: .notPurchased)
+    }
+
+    /// Groups to render: by store or by tag, narrowed to `storeFilter` when set.
+    private var displayGroups: [(key: String, items: [Expense])] {
+        let base: [(key: String, items: [Expense])] = groupByStore
+            ? store.shoppingByStore.map { (key: $0.store, items: $0.items) }
+            : store.shoppingByTag.map { (key: $0.tag, items: $0.items) }
+        guard let f = storeFilter else { return base }
+        return base.compactMap { g in
+            let items = g.items.filter { $0.purchasedFrom?.nilIfBlank == f }
+            return items.isEmpty ? nil : (key: g.key, items: items)
+        }
     }
 
     var body: some View {
@@ -42,9 +59,11 @@ struct TripPurchasesSection: View {
                 .font(.subheadline)
                 .padding().background(Theme.Colors.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
 
-                ForEach(store.shoppingByTag, id: \.tag) { group in
+                controls
+
+                ForEach(displayGroups, id: \.key) { group in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(group.tag).font(.subheadline.bold()).foregroundStyle(.secondary)
+                        Text(group.key).font(.subheadline.bold()).foregroundStyle(.secondary)
                         ForEach(group.items) { item in
                             PurchaseRow(item: item,
                                         onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
@@ -60,10 +79,59 @@ struct TripPurchasesSection: View {
             }
         }
         .sheet(item: $editing) { p in
-            PurchaseEditView(store: store, item: p,
-                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted(),
-                             storeOptions: store.shoppingStores)
+            PurchaseEditView(store: store, familyID: familyID, item: p,
+                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted())
         }
+    }
+
+    /// Group-by-store toggle + store filter chips. Only shown once at least one
+    /// item has a store (otherwise there's nothing to filter or group by).
+    @ViewBuilder private var controls: some View {
+        let stores = store.shoppingStoresInList
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button {
+                    groupByStore.toggle()
+                } label: {
+                    Label(groupByStore ? "Grouped by store" : "Grouped by tag",
+                          systemImage: groupByStore ? "storefront" : "tag")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.Colors.brand)
+                Spacer()
+            }
+            if !stores.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        chip("All", selected: storeFilter == nil) { storeFilter = nil }
+                        ForEach(stores, id: \.self) { s in
+                            chip(s, selected: storeFilter == s) {
+                                storeFilter = (storeFilter == s ? nil : s)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+        }
+        // Drop a stale filter if its store no longer has any to-buy items.
+        .onChange(of: stores) { _, newStores in
+            if let f = storeFilter, !newStores.contains(f) { storeFilter = nil }
+        }
+    }
+
+    private func chip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(selected ? Theme.Colors.brand : Color(.tertiarySystemFill),
+                            in: Capsule())
+                .foregroundStyle(selected ? .white : .primary)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -115,7 +183,9 @@ private struct PurchaseRow: View {
 
 private struct PurchaseEditView: View {
     let store: TripDetailStore
+    let familyID: UUID
     @Environment(FamilyStore.self) private var family
+    @Environment(TripsStore.self) private var trips
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: Expense
@@ -123,12 +193,11 @@ private struct PurchaseEditView: View {
     @State private var tagText: String
     @State private var storeText: String
     let tagOptions: [String]
-    let storeOptions: [String]
 
-    init(store: TripDetailStore, item: Expense, tagOptions: [String], storeOptions: [String]) {
+    init(store: TripDetailStore, familyID: UUID, item: Expense, tagOptions: [String]) {
         self.store = store
+        self.familyID = familyID
         self.tagOptions = tagOptions
-        self.storeOptions = storeOptions
         _draft = State(initialValue: item)
         _amountText = State(initialValue: item.amount == 0 ? "" : String(format: "%.2f", item.amount))
         _tagText = State(initialValue: item.tag ?? "")
@@ -157,8 +226,11 @@ private struct PurchaseEditView: View {
                 }
                 Section("Store") {
                     ComboField(placeholder: "Search or add a store / site", text: $storeText,
-                               options: storeOptions.map { .init(id: $0, name: $0, icon: "storefront") },
-                               pickIcon: "storefront")
+                               options: trips.shoppingStores.map { .init(id: $0.id.uuidString, name: $0.name, icon: "storefront") },
+                               pickIcon: "storefront",
+                               onAdd: { name in
+                                   Task { await trips.createShoppingStore(familyID: familyID, name: name) }
+                               })
                 }
                 Section("Details") {
                     TextField("Amount (USD)", text: $amountText)
@@ -194,6 +266,10 @@ private struct PurchaseEditView: View {
     private func save() async {
         draft.tag = tagText.nilIfBlank
         draft.purchasedFrom = storeText.nilIfBlank
+        // Persist a brand-new store name to the managed list so it's reusable.
+        if let name = storeText.nilIfBlank, trips.store(named: name) == nil {
+            await trips.createShoppingStore(familyID: familyID, name: name)
+        }
         draft.amount = Double(amountText.replacingOccurrences(of: ",", with: "")) ?? 0
         // Marking purchased here defaults the payer to the current member.
         if draft.isPurchased, draft.paidBy == nil {

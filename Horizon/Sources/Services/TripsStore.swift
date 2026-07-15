@@ -11,6 +11,7 @@ final class TripsStore {
     var destinations: [Destination] = []
     var places: [Place] = []
     var packingCategories: [PackingCategoryItem] = []
+    var shoppingStores: [ShoppingStore] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -45,6 +46,10 @@ final class TripsStore {
         do {
             packingCategories = try await supabase.from("fam_packing_categories")
                 .select().order("sort").execute().value
+        } catch { /* non-fatal */ }
+        do {
+            shoppingStores = try await supabase.from("fam_shopping_stores")
+                .select().order("name").execute().value
         } catch { /* non-fatal */ }
     }
 
@@ -122,6 +127,62 @@ final class TripsStore {
             if let i = packingCategories.firstIndex(where: { $0.id == category.id }) {
                 packingCategories[i].icon = icon
             }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: Shopping stores
+
+    /// The managed store whose name matches `name` case-insensitively, if any.
+    func store(named name: String?) -> ShoppingStore? {
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
+        return shoppingStores.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    /// Creates a store (deduped case-insensitively), returning the existing or new
+    /// row. The DB's unique (family_id, lower(name)) index is the backstop.
+    @discardableResult
+    func createShoppingStore(familyID: UUID, name: String) async -> ShoppingStore? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let existing = store(named: trimmed) { return existing }
+        do {
+            let row: ShoppingStore = try await supabase.from("fam_shopping_stores")
+                .insert(ShoppingStore(familyID: familyID, name: trimmed))
+                .select().single().execute().value
+            shoppingStores.append(row)
+            shoppingStores.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return row
+        } catch {
+            // A concurrent insert may have raced us to the unique index — refetch.
+            await load()
+            return store(named: trimmed)
+        }
+    }
+
+    /// Renames a store and repoints every shopping/expense item that used the old
+    /// name, so items stay grouped and filterable under the new name.
+    func renameShoppingStore(_ store: ShoppingStore, name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != store.name else { return }
+        struct P: Encodable { let name: String }
+        do {
+            try await supabase.from("fam_shopping_stores")
+                .update(P(name: trimmed)).eq("id", value: store.id).execute()
+            try await supabase.from("fam_trip_expenses")
+                .update(["purchased_from": trimmed]).eq("purchased_from", value: store.name).execute()
+            if let i = shoppingStores.firstIndex(where: { $0.id == store.id }) {
+                shoppingStores[i].name = trimmed
+                shoppingStores.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Deletes a store from the managed list. Items keep their `purchased_from`
+    /// text (the store just stops appearing as a saved option).
+    func deleteShoppingStore(_ store: ShoppingStore) async {
+        do {
+            try await supabase.from("fam_shopping_stores").delete().eq("id", value: store.id).execute()
+            shoppingStores.removeAll { $0.id == store.id }
         } catch { errorMessage = error.localizedDescription }
     }
 

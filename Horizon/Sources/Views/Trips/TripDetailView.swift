@@ -22,6 +22,7 @@ struct TripDetailView: View {
     @State private var calendarIsError = false
     @State private var showPasteReservation = false
     @State private var showCoverCrop = false
+    @State private var showCapture = false
 
     init(trip: Trip) {
         self.trip = trip
@@ -63,6 +64,14 @@ struct TripDetailView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showCapture = true
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .accessibilityLabel("Quick add from text")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Edit trip", systemImage: "pencil") { showEdit = true }
                     Button("Duplicate trip", systemImage: "plus.square.on.square") {
@@ -95,6 +104,9 @@ struct TripDetailView: View {
             if travelerProfiles.profiles.isEmpty { await travelerProfiles.load() }
         }
         .sheet(isPresented: $showEdit) { TripEditView(trip: current) }
+        .sheet(isPresented: $showCapture) {
+            QuickCaptureView(store: detail, trip: current, familyID: current.familyID)
+        }
         .sheet(item: $editingReservation) { res in
             ReservationEditView(reservation: res).environment(detail)
         }

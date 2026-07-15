@@ -117,6 +117,11 @@ final class TripDetailStore {
     var shoppingTags: [String] {
         Array(Set(expenses.compactMap { $0.tag?.nilIfBlank })).sorted()
     }
+    /// Stores/sites already used on this trip's items — feeds the "From" combobox
+    /// so you can type-to-search or add, the same way tags work.
+    var shoppingStores: [String] {
+        Array(Set(expenses.compactMap { $0.purchasedFrom?.nilIfBlank })).sorted()
+    }
     var shoppingToBuyCount: Int { shoppingItems.count }
     /// Estimated cost of everything still to buy (projected spend).
     var shoppingProjected: Double { shoppingItems.reduce(0) { $0 + $1.amount } }

@@ -61,7 +61,8 @@ struct TripPurchasesSection: View {
         }
         .sheet(item: $editing) { p in
             PurchaseEditView(store: store, item: p,
-                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted())
+                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted(),
+                             storeOptions: store.shoppingStores)
         }
     }
 }
@@ -120,14 +121,18 @@ private struct PurchaseEditView: View {
     @State private var draft: Expense
     @State private var amountText: String
     @State private var tagText: String
+    @State private var storeText: String
     let tagOptions: [String]
+    let storeOptions: [String]
 
-    init(store: TripDetailStore, item: Expense, tagOptions: [String]) {
+    init(store: TripDetailStore, item: Expense, tagOptions: [String], storeOptions: [String]) {
         self.store = store
         self.tagOptions = tagOptions
+        self.storeOptions = storeOptions
         _draft = State(initialValue: item)
         _amountText = State(initialValue: item.amount == 0 ? "" : String(format: "%.2f", item.amount))
         _tagText = State(initialValue: item.tag ?? "")
+        _storeText = State(initialValue: item.purchasedFrom ?? "")
     }
 
     private var nameBinding: Binding<String> {
@@ -150,13 +155,16 @@ private struct PurchaseEditView: View {
                                options: tagOptions.map { .init(id: $0, name: $0, icon: "tag") },
                                pickIcon: "tag")
                 }
+                Section("Store") {
+                    ComboField(placeholder: "Search or add a store / site", text: $storeText,
+                               options: storeOptions.map { .init(id: $0, name: $0, icon: "storefront") },
+                               pickIcon: "storefront")
+                }
                 Section("Details") {
                     TextField("Amount (USD)", text: $amountText)
                         #if !targetEnvironment(macCatalyst)
                         .keyboardType(.decimalPad)
                         #endif
-                    TextField("From (store / site)", text: Binding(
-                        get: { draft.purchasedFrom ?? "" }, set: { draft.purchasedFrom = $0.nilIfBlank }))
                     TextField("Link (product URL)", text: Binding(
                         get: { draft.link ?? "" }, set: { draft.link = $0.nilIfBlank }))
                         .textContentType(.URL)
@@ -185,6 +193,7 @@ private struct PurchaseEditView: View {
 
     private func save() async {
         draft.tag = tagText.nilIfBlank
+        draft.purchasedFrom = storeText.nilIfBlank
         draft.amount = Double(amountText.replacingOccurrences(of: ",", with: "")) ?? 0
         // Marking purchased here defaults the payer to the current member.
         if draft.isPurchased, draft.paidBy == nil {

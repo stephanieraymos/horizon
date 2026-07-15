@@ -61,7 +61,14 @@ struct EventsListView: View {
 
     var body: some View {
         NavigationStack {
-            content
+            // `content` swaps its root identity as data loads (ProgressView ↔
+            // ContentUnavailableView ↔ list). Attaching `.navigationDestination`
+            // directly to it re-registers the destination on every swap, which can
+            // render a duplicate nav bar / double back button. The ZStack is a
+            // stable host so the destination stays mounted once.
+            ZStack {
+                content
+            }
                 .navigationTitle("Countdown")
                 .toolbar {
                     if canEdit {

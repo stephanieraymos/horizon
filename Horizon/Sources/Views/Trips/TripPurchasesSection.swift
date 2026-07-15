@@ -13,6 +13,22 @@ struct TripPurchasesSection: View {
 
     @AppStorage("shopping.groupByStore") private var groupByStore = false
     @State private var storeFilter: String?
+    @State private var dropTargetKey: String?
+
+    /// Reassign dragged items to a group — sets the store (grouped-by-store) or
+    /// tag (grouped-by-tag) to match the drop target, then persists.
+    private func moveItems(_ ids: [String], toGroup key: String) async {
+        for id in ids {
+            guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            if groupByStore {
+                updated.purchasedFrom = (key == "No store") ? nil : key
+            } else {
+                updated.tag = (key == "Other") ? nil : key
+            }
+            await store.saveExpense(updated, splits: store.splits(for: updated))
+        }
+    }
 
     private static let defaultTags = ["Food / Kitchen", "Gear / Tools", "Clothing", "Toiletries", "Other"]
 
@@ -68,13 +84,22 @@ struct TripPurchasesSection: View {
                             PurchaseRow(item: item,
                                         onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
                                         onEdit: { editing = item })
+                                .draggable(item.id.uuidString)
                                 .contextMenu {
                                     Button("Edit") { editing = item }
                                     Button("Delete", role: .destructive) { Task { await store.deleteExpense(item) } }
                                 }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(dropTargetKey == group.key ? Theme.Colors.brand.opacity(0.12) : .clear,
+                                in: RoundedRectangle(cornerRadius: 10))
+                    // Drop an item here to move it into this store / tag group.
+                    .dropDestination(for: String.self) { ids, _ in
+                        Task { await moveItems(ids, toGroup: group.key) }
+                        return true
+                    } isTargeted: { dropTargetKey = $0 ? group.key : nil }
                 }
             }
         }

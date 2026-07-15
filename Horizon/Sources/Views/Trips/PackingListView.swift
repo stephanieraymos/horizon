@@ -24,8 +24,29 @@ struct PackingListView: View {
     @State private var showApplyTemplate = false
     @State private var showSaveTemplate = false
     @State private var showManageCategories = false
+    @State private var dropTargetTitle: String?
 
     enum Grouping: String, CaseIterable { case person = "Person", category = "Category" }
+
+    /// Reassign dragged items to a group — sets the person (Person grouping) or
+    /// category (Category grouping) to match the drop target, then persists.
+    private func moveItems(_ ids: [String],
+                           to group: (title: String, icon: String, items: [PackingItem])) async {
+        for id in ids {
+            guard let item = store.packing.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            if grouping == .person {
+                let target = group.items.first?.memberID
+                guard updated.memberID != target else { continue }
+                updated.memberID = target
+            } else {
+                let target = group.title == "Other" ? nil : group.title
+                guard (updated.category?.nilIfBlank ?? "Other") != group.title else { continue }
+                updated.category = target
+            }
+            await store.savePacking(updated)
+        }
+    }
 
     /// Members on this trip (fallback: whole family).
     private var travelerMembers: [FamilyMember] {
@@ -88,6 +109,7 @@ struct PackingListView: View {
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { editingItem = item }
+                            .draggable(item.id.uuidString)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
                                     Label("Delete", systemImage: "trash")
@@ -111,6 +133,18 @@ struct PackingListView: View {
                         }
                         .foregroundStyle(headerColor(group.title))
                         .textCase(nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                        .background(dropTargetTitle == group.title
+                                    ? headerColor(group.title).opacity(0.18) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                        // Drop an item's card here to reassign it to this person /
+                        // category (its member/category updates automatically).
+                        .dropDestination(for: String.self) { ids, _ in
+                            Task { await moveItems(ids, to: group) }
+                            return true
+                        } isTargeted: { dropTargetTitle = $0 ? group.title : nil }
                     }
                 }
             }

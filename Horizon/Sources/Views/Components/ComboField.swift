@@ -24,6 +24,10 @@ struct ComboField: View {
     /// Mirrors focus but lingers briefly after focus loss so a tap on a suggestion
     /// still registers before the list collapses (the tap-drop gotcha).
     @State private var active = false
+    /// The value just confirmed via "Add …", so the Add row disappears on tap —
+    /// otherwise, for fields that don't add to `options` (e.g. tags), the row
+    /// lingers and it looks like nothing happened.
+    @State private var addedValue: String?
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
 
@@ -46,7 +50,8 @@ struct ComboField: View {
 
     private var showAdd: Bool {
         allowAdd && !trimmed.isEmpty &&
-        !options.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+        !options.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame } &&
+        addedValue?.caseInsensitiveCompare(trimmed) != .orderedSame
     }
 
     var body: some View {
@@ -89,6 +94,7 @@ struct ComboField: View {
         if showAdd {
             Button {
                 let value = trimmed
+                addedValue = value
                 onAdd(value)
                 focused = false
             } label: {

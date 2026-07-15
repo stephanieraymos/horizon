@@ -6,6 +6,18 @@ struct ParsedCapture: Codable {
     var packing: [ParsedPacking] = []
     var todos: [ParsedTodo] = []
     var shopping: [ParsedShopping] = []
+
+    init() {}
+
+    // Tolerate a missing top-level array (e.g. if the model omits an empty list)
+    // so one absent key doesn't fail the whole parse. Synthesized Decodable would
+    // ignore the property defaults above and throw keyNotFound.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        packing = try c.decodeIfPresent([ParsedPacking].self, forKey: .packing) ?? []
+        todos = try c.decodeIfPresent([ParsedTodo].self, forKey: .todos) ?? []
+        shopping = try c.decodeIfPresent([ParsedShopping].self, forKey: .shopping) ?? []
+    }
 }
 
 struct ParsedPacking: Codable {

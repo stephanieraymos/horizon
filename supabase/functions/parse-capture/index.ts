@@ -133,7 +133,7 @@ Deno.serve(async (req: Request) => {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: systemPrompt(ctx),
       tools: [TOOL],
       tool_choice: { type: "tool", name: "emit_items" },

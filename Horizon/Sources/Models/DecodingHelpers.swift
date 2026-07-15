@@ -43,6 +43,18 @@ func encodeDateOnly<K: CodingKey>(
     try container.encode(_dateOnlyFormatter.string(from: date), forKey: key)
 }
 
+/// Parse a "yyyy-MM-dd" string into a local-midnight Date (nil if malformed),
+/// matching how the app decodes DATE columns. Use instead of ad-hoc UTC parsing.
+func dateOnly(from string: String) -> Date? {
+    _dateOnlyFormatter.date(from: String(string.prefix(10)))
+}
+
+/// Format a Date as "yyyy-MM-dd" in the device's local timezone — the same
+/// contract used when encoding DATE columns.
+func dateOnlyString(from date: Date) -> String {
+    _dateOnlyFormatter.string(from: date)
+}
+
 extension String {
     /// Trimmed value, or nil if empty — for optional text columns.
     var nilIfBlank: String? {

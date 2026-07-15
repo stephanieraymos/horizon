@@ -1,6 +1,14 @@
 import Foundation
 import Supabase
 
+/// An error the edge function reported (its JSON `{error: ...}` body), surfaced
+/// so the UI can show the real cause (e.g. a missing API key) instead of a
+/// generic network message.
+struct CaptureServerError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 /// Calls the `parse-capture` edge function to turn a dictated/typed note into
 /// structured trip items. The function returns raw items; the app resolves
 /// people, dates, and stores (see QuickCaptureView).
@@ -20,15 +28,11 @@ enum CaptureParser {
         var context: Context
     }
 
-    /// ISO yyyy-MM-dd for passing trip dates to the parser.
+    /// yyyy-MM-dd (device-local, matching how the app encodes DATE columns) for
+    /// passing trip dates to the parser.
     static func isoDay(_ date: Date?) -> String? {
         guard let date else { return nil }
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        return dateOnlyString(from: date)
     }
 
     static func parse(text: String, context: Context) async throws -> ParsedCapture {
@@ -37,6 +41,16 @@ enum CaptureParser {
             headers: ["Content-Type": "application/json"],
             body: data
         )
-        return try await supabase.functions.invoke("parse-capture", options: options)
+        do {
+            return try await supabase.functions.invoke("parse-capture", options: options)
+        } catch let FunctionsError.httpError(_, data) {
+            // Surface the function's own error message (e.g. missing API key)
+            // rather than the opaque httpError.
+            struct Body: Decodable { let error: String }
+            if let body = try? JSONDecoder().decode(Body.self, from: data) {
+                throw CaptureServerError(message: body.error)
+            }
+            throw CaptureServerError(message: "The parser returned an error.")
+        }
     }
 }

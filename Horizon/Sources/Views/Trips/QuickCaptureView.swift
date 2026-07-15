@@ -36,9 +36,12 @@ struct QuickCaptureView: View {
     }
 
     private var totalToAdd: Int {
-        packingDrafts.filter(\.include).count
-            + todoDrafts.filter(\.include).count
-            + shoppingDrafts.filter(\.include).count
+        func counts<T>(_ drafts: [T], include: (T) -> Bool, text: (T) -> String) -> Int {
+            drafts.filter { include($0) && !text($0).trimmingCharacters(in: .whitespaces).isEmpty }.count
+        }
+        return counts(packingDrafts, include: \.include, text: \.item)
+            + counts(todoDrafts, include: \.include, text: \.title)
+            + counts(shoppingDrafts, include: \.include, text: \.item)
     }
 
     var body: some View {
@@ -268,7 +271,7 @@ struct QuickCaptureView: View {
 
     private func resolveDue(_ due: ParsedDue?) -> Date? {
         guard let due else { return nil }
-        if let iso = due.date?.nilIfBlank, let d = Self.parseISODay(iso) { return d }
+        if let iso = due.date?.nilIfBlank, let d = dateOnly(from: iso) { return d }
         let cal = Calendar(identifier: .gregorian)
         switch due.anchor {
         case "departure":
@@ -289,19 +292,12 @@ struct QuickCaptureView: View {
         return trips.store(named: name)?.name ?? name
     }
 
-    private static func parseISODay(_ s: String) -> Date? {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.date(from: s)
-    }
-
     private func friendlyError(_ error: Error) -> String {
-        let s = "\(error)"
-        if s.localizedCaseInsensitiveContains("ANTHROPIC_API_KEY") {
-            return "The parser isn’t configured yet (missing API key). See setup notes."
+        if let server = error as? CaptureServerError {
+            if server.message.localizedCaseInsensitiveContains("ANTHROPIC_API_KEY") {
+                return "The parser isn’t configured yet — add the ANTHROPIC_API_KEY secret to the parse-capture function."
+            }
+            return server.message
         }
         return "Something went wrong reaching the parser. Check your connection and try again."
     }

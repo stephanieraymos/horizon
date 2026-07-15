@@ -76,17 +76,6 @@ struct TripDetailView: View {
                             Task { await trips.clearTripCover(tripID: current.id) }
                         }
                     }
-                    if current.isUpcoming, current.departDate != nil, TripLiveActivityManager.isSupported {
-                        if TripLiveActivityManager.isRunning(tripName: current.name) {
-                            Button("Stop Live Activity", systemImage: "stop.circle") {
-                                TripLiveActivityManager.stop(tripName: current.name)
-                            }
-                        } else {
-                            Button("Track countdown", systemImage: "timer") {
-                                TripLiveActivityManager.start(trip: current)
-                            }
-                        }
-                    }
                     if current.archived {
                         Button("Restore trip", systemImage: "arrow.uturn.backward") {
                             Task { await restore() }

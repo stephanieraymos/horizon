@@ -56,40 +56,6 @@ targets:
       configs:
         Release:
           CODE_SIGN_STYLE: Automatic
-    entitlements:
-      path: Horizon/Resources/Horizon.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.stephanieraymos.horizon
     dependencies:
       - package: Supabase
         product: Supabase
-      - target: HorizonWidget
-
-  HorizonWidget:
-    type: app-extension
-    platform: iOS
-    deploymentTarget: "18.0"
-    sources:
-      - path: HorizonWidget
-      - path: Horizon/Sources/Shared/WidgetSnapshot.swift
-      - path: Horizon/Sources/Shared/TripActivityAttributes.swift
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stephanieraymos.horizon.HorizonWidget
-        INFOPLIST_FILE: "HorizonWidget/Info.plist"
-        INFOPLIST_KEY_CFBundleDisplayName: Horizon
-        TARGETED_DEVICE_FAMILY: "1,2"
-        SKIP_INSTALL: "YES"
-        # Must match the app: the Catalyst app can only embed a Catalyst-built
-        # widget. ActivityKit/Live Activity code is #if-excluded on Catalyst.
-        SUPPORTS_MACCATALYST: "YES"
-        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"
-      configs:
-        Release:
-          CODE_SIGN_STYLE: Automatic
-    entitlements:
-      path: HorizonWidget/HorizonWidget.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.stephanieraymos.horizon

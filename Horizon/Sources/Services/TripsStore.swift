@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import Supabase
-import WidgetKit
 
 /// Loads and persists trips + destinations from the shared `fam_trips` /
 /// `fam_destinations` tables. RLS scopes every query to the caller's family.
@@ -47,7 +46,6 @@ final class TripsStore {
             packingCategories = try await supabase.from("fam_packing_categories")
                 .select().order("sort").execute().value
         } catch { /* non-fatal */ }
-        publishWidgetSnapshot()
     }
 
     func savePlace(_ place: Place) async {
@@ -177,21 +175,6 @@ final class TripsStore {
         } catch { return nil }
     }
 
-    /// Writes the next-trip snapshot to the App Group and refreshes widgets.
-    /// Foundation-only payload — the widget can't hold a Supabase session.
-    private func publishWidgetSnapshot() {
-        let next = upcoming.first
-        let snap = TripWidgetSnapshot(
-            generatedAt: Date(),
-            tripName: next?.name,
-            destination: next.flatMap { destination(for: $0)?.name ?? $0.destination },
-            departDate: next?.departDate,
-            returnDate: next?.returnDate,
-            isSomeday: next?.isSomeday ?? false,
-            upcomingCount: upcoming.count)
-        TripWidgetSnapshot.save(snap)
-        WidgetCenter.shared.reloadAllTimelines()
-    }
 
     // MARK: Derived collections
 

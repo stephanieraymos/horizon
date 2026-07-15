@@ -11,8 +11,13 @@ struct HomeView: View {
     @Environment(DashboardStore.self) private var dashboard
     @AppStorage("notifications.enabled") private var notificationsEnabled = true
 
+    @State private var path: [Trip] = []
+    @State private var makeEventFor: FamilyEvent?
+
+    private var canEdit: Bool { family.currentMember?.role == .admin }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if let trip = nextTrip {
@@ -43,6 +48,9 @@ struct HomeView: View {
                 .padding()
             }
             .navigationTitle(greeting)
+            .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
+            .eventActions(event: $makeEventFor, allowLinkEdit: false,
+                          onOpenTrip: { path.append($0) })
             .task {
                 if trips.trips.isEmpty { await trips.load() }
                 if dates.dates.isEmpty { await dates.load() }
@@ -220,7 +228,10 @@ struct HomeView: View {
             Label(title, systemImage: systemImage).font(.headline).foregroundStyle(tint)
             ForEach(events) { event in
                 if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
-                    NavigationLink { TripDetailView(trip: trip) } label: { countdownRow(event, chevron: true) }
+                    Button { path.append(trip) } label: { countdownRow(event, chevron: true) }
+                        .buttonStyle(.plain)
+                } else if canEdit {
+                    Button { makeEventFor = event } label: { countdownRow(event, chevron: true) }
                         .buttonStyle(.plain)
                 } else {
                     countdownRow(event, chevron: false)

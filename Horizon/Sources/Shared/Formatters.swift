@@ -11,9 +11,13 @@ enum TripFormat {
         let sameYear = cal.component(.year, from: depart) == cal.component(.year, from: ret)
         let sameMonth = sameYear && cal.component(.month, from: depart) == cal.component(.month, from: ret)
         if sameMonth {
+            // e.g. "Oct 1 – 4, 2026". Note: formatting a Date with only .day().year()
+            // (no month) renders as a garbled "2026 (day: 4)", so build the end from
+            // components instead.
             let start = depart.formatted(.dateTime.month(.abbreviated).day())
-            let end = ret.formatted(.dateTime.day().year())
-            return "\(start) – \(end)"
+            let endDay = cal.component(.day, from: ret)
+            let year = cal.component(.year, from: ret)
+            return "\(start) – \(endDay), \(year)"
         } else if sameYear {
             let start = depart.formatted(.dateTime.month(.abbreviated).day())
             let end = ret.formatted(.dateTime.month(.abbreviated).day().year())

@@ -261,7 +261,7 @@ struct TripDetailView: View {
                 .foregroundStyle(current.isSomeday ? .purple : Theme.Colors.brand)
             Text(TripFormat.dateRange(current.departDate, current.returnDate))
                 .font(.headline).foregroundStyle(.secondary)
-            if let nights = current.nights {
+            if let nights = current.nights, nights > 0 {
                 Text("\(nights) night\(nights == 1 ? "" : "s")")
                     .font(.subheadline).foregroundStyle(.secondary)
             }

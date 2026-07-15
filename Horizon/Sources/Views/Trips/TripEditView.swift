@@ -10,6 +10,7 @@ struct TripEditView: View {
 
     @State private var draft: Trip
     @State private var hasDates: Bool
+    @State private var multiDay: Bool
     @State private var departDate: Date
     @State private var returnDate: Date
     @State private var budgetText: String
@@ -21,6 +22,7 @@ struct TripEditView: View {
         _draft = State(initialValue: trip)
         let depart = trip.departDate
         _hasDates = State(initialValue: depart != nil)
+        _multiDay = State(initialValue: trip.returnDate != nil)
         _departDate = State(initialValue: depart ?? Date())
         _returnDate = State(initialValue: trip.returnDate ?? depart ?? Date())
         _budgetText = State(initialValue: trip.budget.map { String(Int($0)) } ?? "")
@@ -54,8 +56,13 @@ struct TripEditView: View {
                 Section("Dates") {
                     Toggle("Set dates", isOn: $hasDates.animation())
                     if hasDates {
-                        DatePicker("Depart", selection: $departDate, displayedComponents: .date)
-                        DatePicker("Return", selection: $returnDate, in: departDate..., displayedComponents: .date)
+                        DatePicker(multiDay ? "Depart" : "Date", selection: $departDate,
+                                   displayedComponents: .date)
+                        Toggle("Multi-day", isOn: $multiDay.animation())
+                        if multiDay {
+                            DatePicker("Return", selection: $returnDate, in: departDate...,
+                                       displayedComponents: .date)
+                        }
                     } else {
                         Label("Someday — no dates yet", systemImage: "sparkles")
                             .foregroundStyle(.secondary).font(.callout)
@@ -109,7 +116,7 @@ struct TripEditView: View {
 
     private func save() async {
         draft.departDate = hasDates ? departDate : nil
-        draft.returnDate = hasDates ? returnDate : nil
+        draft.returnDate = (hasDates && multiDay) ? returnDate : nil
         // Reconcile the destination grouping from the final text: match an
         // existing destination (case-insensitive), else create it, else clear.
         if let name = destText.nilIfBlank {

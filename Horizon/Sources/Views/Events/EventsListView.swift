@@ -10,7 +10,7 @@ struct EventsListView: View {
 
     @State private var editing: FamilyEvent?
     @State private var isCreating = false
-    @State private var showingTrip: Trip?
+    @State private var path: [Trip] = []
     @State private var makeEventFor: FamilyEvent?
     @State private var linkingEvent: FamilyEvent?
 
@@ -60,15 +60,11 @@ struct EventsListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            // `content` swaps its root identity as data loads (ProgressView ↔
-            // ContentUnavailableView ↔ list). Attaching `.navigationDestination`
-            // directly to it re-registers the destination on every swap, which can
-            // render a duplicate nav bar / double back button. The ZStack is a
-            // stable host so the destination stays mounted once.
-            ZStack {
-                content
-            }
+        // Value/path-based navigation — the previous `.navigationDestination(item:)`
+        // on the load-swapping content rendered a duplicate nav bar / double back
+        // button. Pushing Trip values onto an explicit path is the robust fix.
+        NavigationStack(path: $path) {
+            content
                 .navigationTitle("Countdown")
                 .toolbar {
                     if canEdit {
@@ -87,7 +83,7 @@ struct EventsListView: View {
                     if family.members.isEmpty { await family.load() }
                     if trips.trips.isEmpty { await trips.load() }
                 }
-                .navigationDestination(item: $showingTrip) { TripDetailView(trip: $0) }
+                .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
                 .sheet(item: $editing) { event in
                     EventEditView(existing: event)
                 }
@@ -97,58 +93,19 @@ struct EventsListView: View {
                 .sheet(item: $linkingEvent) { event in
                     LinkTripSheet(event: event)
                 }
-                .confirmationDialog("Make this an event?",
-                                    isPresented: Binding(get: { makeEventFor != nil },
-                                                         set: { if !$0 { makeEventFor = nil } }),
-                                    presenting: makeEventFor) { event in
-                    Button("Create a trip") { Task { await createTrip(from: event) } }
-                    if !isSynthetic(event) {
-                        Button("Link an existing trip") {
-                            let e = event
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 300_000_000)
-                                linkingEvent = e
-                            }
-                        }
-                        Button("Edit countdown") { editing = event }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: { event in
-                    Text(isSynthetic(event)
-                         ? "Plan a trip around \(event.title)?"
-                         : "Link “\(event.title)” to a trip so tapping it opens the trip.")
-                }
+                .eventActions(event: $makeEventFor,
+                              onOpenTrip: { path.append($0) },
+                              onLinkTrip: { linkingEvent = $0 },
+                              onEditCountdown: { editing = $0 })
         }
     }
 
     private func tap(_ event: FamilyEvent, synthetic: Bool) {
         if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
-            showingTrip = trip
+            path.append(trip)
         } else if canEdit {
-            // Birthdays are treated the same — you can make a trip out of one.
             makeEventFor = event
         }
-    }
-
-    private func createTrip(from event: FamilyEvent) async {
-        guard let familyID = family.familyID else { return }
-        // Annual events (birthdays) count down to the next occurrence — use that
-        // as the trip date, not the original (possibly long-past) date.
-        let date = event.isAnnual ? event.nextOccurrenceDate : event.eventDate
-        let trip = Trip(familyID: familyID, name: event.title, departDate: date,
-                        status: .planning, createdBy: family.currentMember?.id)
-        await trips.save(trip)
-        if isSynthetic(event) {
-            // Synthetic birthdays have no fam_events row to link; give the new
-            // trip its own countdown instead.
-            await events.syncCountdown(forTripID: trip.id, familyID: familyID,
-                                       name: trip.name, departDate: date,
-                                       createdBy: family.currentMember?.userID)
-        } else {
-            await events.linkTrip(event, tripID: trip.id)
-        }
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        showingTrip = trips.trips.first { $0.id == trip.id } ?? trip
     }
 
     @ViewBuilder

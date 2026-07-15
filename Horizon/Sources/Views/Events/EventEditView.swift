@@ -2,6 +2,9 @@ import SwiftUI
 
 struct EventEditView: View {
     let existing: FamilyEvent?
+    /// Seed a NEW event (existing == nil) from a tapped countdown.
+    var prefillTitle: String? = nil
+    var prefillDate: Date? = nil
 
     @Environment(EventsStore.self) private var events
     @Environment(FamilyStore.self) private var family
@@ -116,7 +119,11 @@ struct EventEditView: View {
         if family.members.isEmpty {
             Task { await family.load() }
         }
-        guard let existing else { return }
+        guard let existing else {
+            if let prefillTitle { title = prefillTitle }
+            if let prefillDate { eventDate = prefillDate }
+            return
+        }
         title           = existing.title
         eventType       = existing.eventType ?? FamilyEventType.vacation.rawValue
         eventDate       = existing.eventDate

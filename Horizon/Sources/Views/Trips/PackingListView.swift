@@ -95,8 +95,9 @@ struct PackingListView: View {
                             }
                         }
                     } header: {
-                        HStack {
-                            Text(group.title)
+                        HStack(spacing: 6) {
+                            Image(systemName: group.icon).font(.footnote)
+                            Text(group.title).font(.subheadline.weight(.semibold))
                             Spacer()
                             Button {
                                 addContext = PackingAddContext(
@@ -106,9 +107,10 @@ struct PackingListView: View {
                                 Image(systemName: "plus.circle").font(.subheadline)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(Theme.Colors.brand)
                             .accessibilityLabel("Add to \(group.title)")
                         }
+                        .foregroundStyle(headerColor(group.title))
+                        .textCase(nil)
                     }
                 }
             }
@@ -181,6 +183,18 @@ struct PackingListView: View {
     }
 
     // MARK: Grouping
+
+    /// A tasteful, light/dark-adaptive palette for group headers so each person /
+    /// category is easy to tell apart at a glance.
+    private static let headerPalette: [Color] =
+        [.blue, .indigo, .purple, .pink, .orange, .green, .teal, .brown]
+
+    /// Stable colour for a group title (same person/category always gets the same
+    /// colour, across launches — unlike String.hashValue which is seeded per run).
+    private func headerColor(_ title: String) -> Color {
+        let sum = title.unicodeScalars.reduce(UInt32(0)) { $0 &+ $1.value }
+        return Self.headerPalette[Int(sum) % Self.headerPalette.count]
+    }
 
     private var groups: [(title: String, icon: String, items: [PackingItem])] {
         switch grouping {

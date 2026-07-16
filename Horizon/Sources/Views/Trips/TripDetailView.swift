@@ -368,6 +368,9 @@ struct TripDetailView: View {
                         },
                         onDelete: { entry in
                             Task { await detail.deleteActivity(id: entry.activity.id, fromDayID: entry.dayID) }
+                        },
+                        onReorder: { ids, target in
+                            Task { await detail.reorderDay(date: group.date, moving: ids, before: target.activity.id) }
                         })
                 }
             }

@@ -287,11 +287,51 @@ final class TripDetailStore {
             }
         }
         return byDate.keys.sorted().map { date in
-            let entries = byDate[date]!.sorted {
-                ItineraryTime.sortValue($0.activity.time) < ItineraryTime.sortValue($1.activity.time)
-            }
+            let all = byDate[date]!
+            // Once the day is manually ordered (any activity has a sort), honor
+            // that; otherwise fall back to chronological (time) order.
+            let manual = all.contains { $0.activity.sort != nil }
+            let entries = manual
+                ? all.sorted { ($0.activity.sort ?? .max) < ($1.activity.sort ?? .max) }
+                : all.sorted { ItineraryTime.sortValue($0.activity.time) < ItineraryTime.sortValue($1.activity.time) }
             return ItineraryDayGroup(date: date, entries: entries)
         }
+    }
+
+    /// Persists a manual reorder for a day: moves the dragged activities to sit
+    /// just before `target`, assigns explicit sort indices, and consolidates the
+    /// date's activities into a single row.
+    func reorderDay(date: Date, moving draggedIDs: [String], before target: UUID) async {
+        let cal = Calendar.current
+        guard let group = itineraryTimeline.first(where: { cal.isDate($0.date, inSameDayAs: date) }) else { return }
+        var ordered = group.entries.map(\.activity)
+        let dragged = Set(draggedIDs)
+        let moving = ordered.filter { dragged.contains($0.id.uuidString) }
+        guard !moving.isEmpty, !moving.contains(where: { $0.id == target }) else { return }
+        ordered.removeAll { dragged.contains($0.id.uuidString) }
+        if let idx = ordered.firstIndex(where: { $0.id == target }) {
+            ordered.insert(contentsOf: moving, at: idx)
+        } else {
+            ordered.append(contentsOf: moving)
+        }
+        for i in ordered.indices { ordered[i].sort = i }
+        await consolidate(date: date, activities: ordered)
+    }
+
+    /// Writes all of a date's activities into a single day row and removes any
+    /// duplicate rows for that date.
+    private func consolidate(date: Date, activities: [ItineraryActivity]) async {
+        let cal = Calendar.current
+        let rows = itinerary.filter { cal.isDate($0.dayDate, inSameDayAs: date) }
+        let day = ItineraryDay(id: rows.first?.id ?? UUID(), tripID: tripID,
+                               dayDate: cal.startOfDay(for: date), activities: activities)
+        do {
+            try await supabase.from("fam_trip_itinerary").upsert(day).execute()
+            for extra in rows.dropFirst() {
+                try await supabase.from("fam_trip_itinerary").delete().eq("id", value: extra.id).execute()
+            }
+        } catch { errorMessage = error.localizedDescription }
+        await load()
     }
 
     var hasItinerary: Bool { itinerary.contains { !$0.activities.isEmpty } }

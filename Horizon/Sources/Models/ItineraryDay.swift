@@ -15,6 +15,9 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
     /// check-out, so it can be updated/removed in sync when the reservation
     /// changes. Additive JSON key — other apps sharing the table ignore it.
     var reservationID: UUID?
+    /// Manual display order within its day. nil = "auto" (order by time); set once
+    /// the user drags to reorder. Additive JSON key.
+    var sort: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, time, title
@@ -22,6 +25,7 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
         case mapsURL = "maps_url"
         case notes, done
         case reservationID = "reservation_id"
+        case sort
     }
 }
 

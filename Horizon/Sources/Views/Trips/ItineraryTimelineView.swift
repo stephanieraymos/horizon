@@ -9,15 +9,41 @@ struct ItineraryEditContext: Identifiable {
     let date: Date
 }
 
+/// Infers an activity type icon + color from its title, so existing activities
+/// get sensible visuals with no extra data entry.
+enum ItineraryStyle {
+    static func on(_ title: String) -> (icon: String, color: Color) {
+        let t = title.lowercased()
+        func any(_ words: [String]) -> Bool { words.contains { t.contains($0) } }
+        if any(["flight", "fly", "airport", "depart", "arrive", "plane", "boarding"]) { return ("airplane", .blue) }
+        if any(["drive", "road", "car ", "gas", "fuel", "parking"]) { return ("car.fill", .teal) }
+        if any(["train", "rail"]) { return ("tram.fill", .teal) }
+        if any(["ferry", "boat", "cruise"]) { return ("ferry.fill", .teal) }
+        if any(["check-in", "check in", "checkin", "check-out", "checkout", "check out",
+                "hotel", "lodging", "tent", "camp", "cabin", "airbnb", "room", "arrive at"]) { return ("bed.double.fill", .indigo) }
+        if any(["breakfast", "brunch", "lunch", "dinner", "eat", "food", "restaurant",
+                "cafe", "coffee", "meal", "drinks", "bar", "snack"]) { return ("fork.knife", .orange) }
+        if any(["hike", "trail", "walk", "beach", "surf", "kayak", "swim", "explore",
+                "sightsee", "tour", "visit", "museum", "park", "photo"]) { return ("figure.hiking", .green) }
+        if any(["pack", "unpack", "load", "gear"]) { return ("bag.fill", .brown) }
+        if any(["charge", "battery", "power"]) { return ("bolt.fill", .yellow) }
+        return ("mappin.and.ellipse", Theme.Colors.brand)
+    }
+}
+
 /// One calendar day of the itinerary: a header (Day N · weekday) with its
-/// activities beneath in a time-sorted timeline — the pattern used by TripIt /
-/// Wanderlog (one day header, activities nested, chronological), instead of a
-/// separate dated card per activity.
+/// activities beneath in a connected timeline — the pattern used by TripIt /
+/// Wanderlog. Each activity shows a type icon; drag one onto another to reorder.
 struct ItineraryDayTimeline: View {
     let group: ItineraryDayGroup
     let dayNumber: Int?
     let onTap: (ItineraryEntry) -> Void
     let onDelete: (ItineraryEntry) -> Void
+    /// (draggedActivityIDs, targetEntry) — drop the dragged item before target.
+    let onReorder: ([String], ItineraryEntry) -> Void
+
+    @State private var dropTargetID: UUID?
+    private let rail = Color.secondary.opacity(0.28)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -34,10 +60,17 @@ struct ItineraryDayTimeline: View {
                 Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(group.entries) { entry in
-                    Button { onTap(entry) } label: { row(entry) }
-                        .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(group.entries.enumerated()), id: \.element.id) { idx, entry in
+                    row(entry, isFirst: idx == 0, isLast: idx == group.entries.count - 1)
+                        .contentShape(Rectangle())
+                        .background(dropTargetID == entry.id ? Theme.Colors.brand.opacity(0.10) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { onTap(entry) }
+                        .draggable(entry.activity.id.uuidString)
+                        .dropDestination(for: String.self) { ids, _ in
+                            onReorder(ids, entry); return true
+                        } isTargeted: { dropTargetID = $0 ? entry.id : nil }
                         .contextMenu {
                             Button("Edit", systemImage: "pencil") { onTap(entry) }
                             Button("Delete", systemImage: "trash", role: .destructive) { onDelete(entry) }
@@ -50,14 +83,27 @@ struct ItineraryDayTimeline: View {
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func row(_ entry: ItineraryEntry) -> some View {
+    private func row(_ entry: ItineraryEntry, isFirst: Bool, isLast: Bool) -> some View {
+        let style = ItineraryStyle.on(entry.activity.title)
         let timed = ItineraryTime.display(entry.activity.time)
         return HStack(alignment: .top, spacing: 10) {
             Text(timed ?? "All day")
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(timed != nil ? Theme.Colors.brand : .secondary)
-                .frame(width: 66, alignment: .trailing)
-            Circle().fill(Theme.Colors.brand).frame(width: 7, height: 7).padding(.top, 5)
+                .frame(width: 62, alignment: .trailing)
+                .padding(.top, 7)
+
+            // Type-icon badge with a rail connecting it to the neighbours.
+            VStack(spacing: 0) {
+                Rectangle().fill(rail).frame(width: 2, height: 7).opacity(isFirst ? 0 : 1)
+                ZStack {
+                    Circle().fill(style.color.opacity(0.16)).frame(width: 28, height: 28)
+                    Image(systemName: style.icon).font(.caption2).foregroundStyle(style.color)
+                }
+                Rectangle().fill(rail).frame(width: 2).frame(maxHeight: .infinity).opacity(isLast ? 0 : 1)
+            }
+            .frame(width: 28)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.activity.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                 if let loc = entry.activity.locationName?.nilIfBlank {
@@ -68,9 +114,11 @@ struct ItineraryDayTimeline: View {
                     Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
                 }
             }
+            .padding(.top, 6)
+            .padding(.bottom, isLast ? 0 : 16)
+
             Spacer(minLength: 0)
         }
-        .contentShape(Rectangle())
     }
 }
 
@@ -148,7 +196,8 @@ struct ItineraryActivityEditView: View {
             mapsURL: activity?.mapsURL,
             notes: notes.nilIfBlank,
             done: activity?.done,
-            reservationID: activity?.reservationID)
+            reservationID: activity?.reservationID,
+            sort: activity?.sort)
         await store.upsertActivity(updated, onDate: date, fromDayID: fromDayID)
         dismiss()
     }

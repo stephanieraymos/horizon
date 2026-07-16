@@ -275,6 +275,75 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Every activity grouped by calendar day and sorted by time — the timeline
+    /// display model. Merges duplicate day rows for the same date into one group.
+    var itineraryTimeline: [ItineraryDayGroup] {
+        let cal = Calendar.current
+        var byDate: [Date: [ItineraryEntry]] = [:]
+        for day in itinerary {
+            let key = cal.startOfDay(for: day.dayDate)
+            for act in day.activities {
+                byDate[key, default: []].append(ItineraryEntry(activity: act, dayID: day.id))
+            }
+        }
+        return byDate.keys.sorted().map { date in
+            let entries = byDate[date]!.sorted {
+                ItineraryTime.sortValue($0.activity.time) < ItineraryTime.sortValue($1.activity.time)
+            }
+            return ItineraryDayGroup(date: date, entries: entries)
+        }
+    }
+
+    var hasItinerary: Bool { itinerary.contains { !$0.activities.isEmpty } }
+
+    /// Adds or updates a single activity, placing it on `date`'s day (creating the
+    /// day row if needed, reusing an existing one otherwise — so we never spawn
+    /// duplicate day rows). If the activity moved to a new date, it's removed from
+    /// its old row (deleting that row if it's now empty).
+    func upsertActivity(_ activity: ItineraryActivity, onDate date: Date, fromDayID: UUID?) async {
+        let cal = Calendar.current
+        var days = itinerary
+        var affected = Set<UUID>()
+
+        if let fromDayID, let i = days.firstIndex(where: { $0.id == fromDayID }),
+           !cal.isDate(days[i].dayDate, inSameDayAs: date) {
+            days[i].activities.removeAll { $0.id == activity.id }
+            affected.insert(days[i].id)
+        }
+
+        if let i = days.firstIndex(where: { cal.isDate($0.dayDate, inSameDayAs: date) }) {
+            if let a = days[i].activities.firstIndex(where: { $0.id == activity.id }) {
+                days[i].activities[a] = activity
+            } else {
+                days[i].activities.append(activity)
+            }
+            affected.insert(days[i].id)
+        } else {
+            let day = ItineraryDay(tripID: tripID, dayDate: cal.startOfDay(for: date), activities: [activity])
+            days.append(day)
+            affected.insert(day.id)
+        }
+        await persist(days: days, affected: affected)
+    }
+
+    func deleteActivity(id: UUID, fromDayID: UUID) async {
+        guard let i = itinerary.firstIndex(where: { $0.id == fromDayID }) else { return }
+        var days = itinerary
+        days[i].activities.removeAll { $0.id == id }
+        await persist(days: days, affected: [days[i].id])
+    }
+
+    /// Upserts affected non-empty day rows, deletes emptied ones, then reloads.
+    private func persist(days: [ItineraryDay], affected: Set<UUID>) async {
+        let upserts = days.filter { affected.contains($0.id) && !$0.activities.isEmpty }
+        let deletes = days.filter { affected.contains($0.id) && $0.activities.isEmpty }
+        do {
+            if !upserts.isEmpty { try await supabase.from("fam_trip_itinerary").upsert(upserts).execute() }
+            for d in deletes { try await supabase.from("fam_trip_itinerary").delete().eq("id", value: d.id).execute() }
+        } catch { errorMessage = error.localizedDescription }
+        await load()
+    }
+
     // MARK: Packing
 
     private func fetchPacking() async -> [PackingItem] {

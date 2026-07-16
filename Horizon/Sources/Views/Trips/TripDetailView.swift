@@ -13,7 +13,7 @@ struct TripDetailView: View {
     @State private var showEdit = false
     @State private var confirmDelete = false
     @State private var editingReservation: Reservation?
-    @State private var editingDay: ItineraryDay?
+    @State private var editingActivity: ItineraryEditContext?
     @State private var coverItem: PhotosPickerItem?
     @State private var showMemories = false
     @State private var showMoodBoard = false
@@ -110,8 +110,10 @@ struct TripDetailView: View {
         .sheet(item: $editingReservation) { res in
             ReservationEditView(reservation: res).environment(detail)
         }
-        .sheet(item: $editingDay) { day in
-            ItineraryDayEditView(day: day).environment(detail)
+        .sheet(item: $editingActivity) { ctx in
+            ItineraryActivityEditView(store: detail, activity: ctx.activity,
+                                      fromDayID: ctx.fromDayID, initialDate: ctx.date)
+                .environment(detail)
         }
         .sheet(isPresented: $showMemories) {
             MemoriesView(store: detail, tripName: current.name)
@@ -347,25 +349,38 @@ struct TripDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Itinerary") {
                 Button {
-                    editingDay = ItineraryDay(tripID: current.id, dayDate: current.departDate ?? Date())
+                    editingActivity = ItineraryEditContext(
+                        activity: nil, fromDayID: nil,
+                        date: current.departDate ?? detail.itineraryTimeline.first?.date ?? Date())
                 } label: { Image(systemName: "plus.circle.fill").font(.title3) }
             }
 
-            if detail.itinerary.isEmpty {
+            if !detail.hasItinerary {
                 emptyHint("Plan a day-by-day schedule.")
             } else {
-                ForEach(detail.itinerary) { day in
-                    ItineraryDayCard(day: day)
-                        .onTapGesture { editingDay = day }
-                        .contextMenu {
-                            Button("Edit") { editingDay = day }
-                            Button("Delete", role: .destructive) {
-                                Task { await detail.deleteDay(day) }
-                            }
-                        }
+                ForEach(detail.itineraryTimeline) { group in
+                    ItineraryDayTimeline(
+                        group: group,
+                        dayNumber: dayNumber(for: group.date),
+                        onTap: { entry in
+                            editingActivity = ItineraryEditContext(
+                                activity: entry.activity, fromDayID: entry.dayID, date: group.date)
+                        },
+                        onDelete: { entry in
+                            Task { await detail.deleteActivity(id: entry.activity.id, fromDayID: entry.dayID) }
+                        })
                 }
             }
         }
+    }
+
+    /// "Day N" relative to the trip's departure (1-based); nil for a someday trip.
+    private func dayNumber(for date: Date) -> Int? {
+        guard let depart = current.departDate else { return nil }
+        let cal = Calendar.current
+        let n = cal.dateComponents([.day], from: cal.startOfDay(for: depart),
+                                   to: cal.startOfDay(for: date)).day ?? 0
+        return n >= 0 ? n + 1 : nil
     }
 
     private var notesSection: some View {
@@ -532,35 +547,3 @@ private struct ReservationCard: View {
     }
 }
 
-private struct ItineraryDayCard: View {
-    let day: ItineraryDay
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(day.dayDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                .font(.headline)
-            if day.activities.isEmpty {
-                Text("No activities").font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(day.activities) { act in
-                    HStack(alignment: .top, spacing: 8) {
-                        if let time = act.time?.nilIfBlank {
-                            Text(time).font(.caption.monospaced()).foregroundStyle(Theme.Colors.brand)
-                                .frame(width: 62, alignment: .leading)
-                        } else {
-                            Text("•").frame(width: 62, alignment: .leading).foregroundStyle(.secondary)
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(act.title).font(.subheadline)
-                            if let loc = act.locationName?.nilIfBlank {
-                                Text(loc).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding().background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-    }
-}

@@ -25,6 +25,45 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
     }
 }
 
+/// Time parsing/formatting for itinerary activities. Stored `time` may be any
+/// legacy format ("2:00pm", "14:00") or the current "h:mm a"; these normalize it.
+enum ItineraryTime {
+    private static func formatter(_ fmt: String) -> DateFormatter {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = fmt; return f
+    }
+    static func parse(_ s: String?) -> Date? {
+        guard let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+        for fmt in ["h:mm a", "h:mma", "HH:mm", "H:mm"] {
+            if let d = formatter(fmt).date(from: s) { return d }
+        }
+        return nil
+    }
+    static func format(_ date: Date) -> String { formatter("h:mm a").string(from: date) }
+    /// Consistent "h:mm a" for display; nil for all-day / blank / unparseable.
+    static func display(_ s: String?) -> String? { parse(s).map(format) }
+    /// Minutes since midnight for sorting; all-day/unparseable sorts first.
+    static func sortValue(_ s: String?) -> Int {
+        guard let d = parse(s) else { return -1 }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+}
+
+/// One activity flattened out of its day row, keeping a link back to the row it
+/// lives in (multiple rows can share a date; the timeline merges them).
+struct ItineraryEntry: Identifiable {
+    let activity: ItineraryActivity
+    let dayID: UUID
+    var id: UUID { activity.id }
+}
+
+/// A calendar day's worth of activities for the timeline, time-sorted.
+struct ItineraryDayGroup: Identifiable {
+    let date: Date
+    let entries: [ItineraryEntry]
+    var id: Date { date }
+}
+
 /// Mirror of `fam_trip_itinerary` (one row per day; activities as a jsonb array).
 struct ItineraryDay: Codable, Identifiable, Hashable {
     let id: UUID

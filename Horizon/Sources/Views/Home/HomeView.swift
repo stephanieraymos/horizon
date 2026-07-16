@@ -128,7 +128,8 @@ struct HomeView: View {
     private func nextTripCard(_ trip: Trip) -> some View {
         NavigationLink { TripDetailView(trip: trip) } label: {
             VStack(alignment: .leading, spacing: 0) {
-                CoverImage(cover: trip.coverPhotoURL) {
+                CoverImage(cover: trip.coverPhotoURL,
+                           focus: UnitPoint(x: trip.coverFocusX, y: trip.coverFocusY)) {
                     LinearGradient(colors: [Theme.Colors.brand.opacity(0.7), Theme.Colors.brand.opacity(0.35)],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)
                 }

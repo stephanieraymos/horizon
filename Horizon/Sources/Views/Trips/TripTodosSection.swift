@@ -59,6 +59,7 @@ private struct TodoRow: View {
     let todo: TripTodo
     let onToggle: () -> Void
     let onEdit: () -> Void
+    @Environment(FamilyStore.self) private var family
 
     private var overdue: Bool {
         guard let due = todo.dueDate, !todo.done else { return false }
@@ -83,6 +84,9 @@ private struct TodoRow: View {
                             Text(due, format: .dateTime.month(.abbreviated).day().year())
                                 .font(.caption)
                                 .foregroundStyle(overdue ? .red : .secondary)
+                        }
+                        if let by = todo.createdBy, let name = family.memberName(userID: by) {
+                            Text("Added by \(name)").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                     Spacer()

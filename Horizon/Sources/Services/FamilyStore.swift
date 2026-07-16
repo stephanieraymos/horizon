@@ -48,6 +48,12 @@ final class FamilyStore {
         members.first { $0.id == id }?.name
     }
 
+    /// Resolve a member by their auth user id (todos record `created_by` as a
+    /// user id, not a member id).
+    func memberName(userID: UUID) -> String? {
+        members.first { $0.userID == userID }?.name
+    }
+
     /// Creates a lightweight person (role=none) so they're reusable on future
     /// trips. Returns the created member, or an existing one with the same name.
     @discardableResult

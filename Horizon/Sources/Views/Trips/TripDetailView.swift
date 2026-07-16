@@ -209,6 +209,7 @@ struct TripDetailView: View {
     // MARK: Header + overview
 
     private var coverBanner: some View {
+        ZStack(alignment: .bottomLeading) {
         PhotosPicker(selection: $coverItem, matching: .images) {
             Group {
                 if current.coverPhotoURL?.nilIfBlank != nil {
@@ -254,6 +255,20 @@ struct TripDetailView: View {
             get: { coverError != nil }, set: { if !$0 { coverError = nil } })) {
             Button("OK", role: .cancel) { coverError = nil }
         } message: { Text(coverError ?? "") }
+
+            // Reframe sits over the picker (the picker owns the tap = change photo),
+            // so repositioning is discoverable without burying it in the ⋯ menu.
+            if current.coverPhotoURL?.nilIfBlank != nil {
+                Button { showCoverCrop = true } label: {
+                    Label("Reframe", systemImage: "crop")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+            }
+        }
     }
 
     private var header: some View {

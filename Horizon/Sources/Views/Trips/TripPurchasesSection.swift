@@ -164,6 +164,7 @@ private struct PurchaseRow: View {
     let item: Expense
     let onToggle: () -> Void
     let onEdit: () -> Void
+    @Environment(FamilyStore.self) private var family
 
     var body: some View {
         HStack(spacing: 10) {
@@ -186,6 +187,9 @@ private struct PurchaseRow: View {
                         }
                         if let notes = item.notes?.nilIfBlank {
                             Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+                        }
+                        if let by = item.loggedBy, let name = family.memberName(id: by) {
+                            Text("Added by \(name)").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                     Spacer()
@@ -296,6 +300,8 @@ private struct PurchaseEditView: View {
             await trips.createShoppingStore(familyID: familyID, name: name)
         }
         draft.amount = Double(amountText.replacingOccurrences(of: ",", with: "")) ?? 0
+        // Record who added the item (the shopping flow never set this before).
+        if draft.loggedBy == nil { draft.loggedBy = family.currentMember?.id }
         // Marking purchased here defaults the payer to the current member.
         if draft.isPurchased, draft.paidBy == nil {
             draft.paidBy = family.currentMember?.id

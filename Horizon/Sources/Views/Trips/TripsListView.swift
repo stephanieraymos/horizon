@@ -165,7 +165,8 @@ struct TripRow: View {
         } label: {
             HStack(spacing: 12) {
                 if trip.coverPhotoURL?.nilIfBlank != nil {
-                    CoverImage(cover: trip.coverPhotoURL) { Color.secondary.opacity(0.12) }
+                    CoverImage(cover: trip.coverPhotoURL,
+                               focus: UnitPoint(x: trip.coverFocusX, y: trip.coverFocusY)) { Color.secondary.opacity(0.12) }
                         .frame(width: 46, height: 46)
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                 }

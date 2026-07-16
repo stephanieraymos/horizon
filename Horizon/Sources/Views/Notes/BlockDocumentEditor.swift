@@ -17,7 +17,6 @@ struct BlockDocumentEditor: View {
                     ContentBlockRow(
                         block: $block, focused: $focused, focusRequest: $focusRequest,
                         upload: { _, _, _ in nil },
-                        signedURL: { _ in nil },
                         onInsertAfter: { afterId, nb in insertAfter(afterId, nb, proxy: proxy) },
                         ordinal: numberedOrdinals[block.id]
                     )

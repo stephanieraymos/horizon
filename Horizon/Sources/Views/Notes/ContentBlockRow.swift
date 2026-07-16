@@ -16,7 +16,6 @@ struct ContentBlockRow: View {
     @Binding var focusRequest: UUID?
     /// (data, fileName, contentType) -> storage path
     let upload: (Data, String, String?) async throws -> String?
-    let signedURL: (String) async -> URL?
     /// Insert a new block right after the one with the given id, then focus it.
     var onInsertAfter: (UUID, ContentBlock) -> Void = { _, _ in }
     /// 1-based position for a numbered-list item (computed by the host editor).
@@ -255,7 +254,7 @@ struct ContentBlockRow: View {
             }
 
         case .image:
-            ImageBlockView(block: $block, upload: upload, signedURL: signedURL)
+            ImageBlockView(block: $block, upload: upload)
 
         case .link:
             HStack(spacing: 10) {
@@ -445,10 +444,8 @@ extension Binding where Value == String? {
 private struct ImageBlockView: View {
     @Binding var block: ContentBlock
     let upload: (Data, String, String?) async throws -> String?
-    let signedURL: (String) async -> URL?
     @State private var photoItem: PhotosPickerItem?
     @State private var showFileImporter = false
-    @State private var url: URL?
     @State private var uploading = false
     @State private var errorText: String?
 
@@ -480,9 +477,6 @@ private struct ImageBlockView: View {
                         .font(.caption).foregroundStyle(.red)
                 }
             }
-        }
-        .task(id: block.filePath) {
-            if let path = block.filePath { url = await signedURL(path) }
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }

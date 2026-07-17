@@ -10,17 +10,14 @@ struct MainTabView: View {
             HomeView()
                 .tabItem { Label("Home", systemImage: "house") }
 
-            TripsListView()
-                .tabItem { Label("Trips", systemImage: "airplane") }
+            EventsBoardView()
+                .tabItem { Label("Events", systemImage: "calendar") }
 
             SomedayView()
                 .tabItem { Label("Someday", systemImage: "map") }
 
             DatesView()
                 .tabItem { Label("Dates", systemImage: "heart") }
-
-            EventsListView()
-                .tabItem { Label("Countdown", systemImage: "calendar.badge.clock") }
         }
     }
 }

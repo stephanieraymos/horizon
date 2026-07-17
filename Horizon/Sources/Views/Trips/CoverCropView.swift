@@ -33,8 +33,12 @@ struct CoverCropView: View {
                     .background(GeometryReader { _ in Color.clear
                         .task(id: trip.coverPhotoURL) { await measureOverflow(frame: CGSize(width: geo.size.width, height: bannerHeight)) }
                     })
-                    .gesture(
-                        DragGesture()
+                    // High-priority + minimumDistance 0 so the image claims the
+                    // touch before the enclosing sheet's drag-to-dismiss pan can
+                    // steal it — otherwise vertical drags just move the sheet and
+                    // the cover appears "not draggable".
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 0)
                             .updating($dragStart) { _, state, _ in if state == nil { state = focus } }
                             .onChanged { value in
                                 let base = dragStart ?? focus

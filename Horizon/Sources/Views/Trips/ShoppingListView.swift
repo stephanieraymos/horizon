@@ -27,8 +27,11 @@ struct ShoppingListView: View {
     @Environment(TripsStore.self) private var trips
 
     enum Grouping: String, CaseIterable { case tag = "Tag", store = "Store" }
-    @State private var grouping: Grouping = .tag
-    @State private var subGroupOn = true
+    // Persisted so the grouping choice survives relaunches (as the old inline
+    // shopping view did).
+    @AppStorage("shopping.groupByStore") private var groupByStore = false
+    @AppStorage("shopping.subGroupOn") private var subGroupOn = true
+    private var grouping: Grouping { groupByStore ? .store : .tag }
     @State private var storeFilter: String?
     @State private var editing: Expense?
     @State private var dropTargetTitle: String?
@@ -98,7 +101,8 @@ struct ShoppingListView: View {
                     description: Text("Add items, then check them off as you shop."))
             } else {
                 Section {
-                    Picker("Group by", selection: $grouping) {
+                    Picker("Group by", selection: Binding(
+                        get: { grouping }, set: { groupByStore = ($0 == .store) })) {
                         ForEach(Grouping.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)

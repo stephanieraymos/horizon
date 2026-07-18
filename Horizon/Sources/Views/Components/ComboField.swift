@@ -110,7 +110,10 @@ struct ComboField: View {
 
     private func add() {
         let value = trimmed
-        guard !value.isEmpty else { return }
+        // The Button action and the simultaneous gesture can both fire on one
+        // tap; bail if we already committed this value so onAdd runs only once
+        // (double-adding would create duplicate stores).
+        guard !value.isEmpty, addedValue?.caseInsensitiveCompare(value) != .orderedSame else { return }
         addedValue = value
         text = value
         onAdd(value)

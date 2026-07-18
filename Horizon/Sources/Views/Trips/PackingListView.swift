@@ -8,6 +8,23 @@ private struct PackingAddContext: Identifiable {
     var category: String?
 }
 
+/// A secondary bucket inside a primary group (e.g. "Bathroom" under a person).
+/// `title == nil` means sub-grouping is off — just a flat list of items.
+private struct PackSubGroup: Identifiable {
+    let id = UUID()
+    let title: String?
+    let icon: String?
+    let items: [PackingItem]
+}
+
+private struct PackPrimaryGroup: Identifiable {
+    let id = UUID()
+    let title: String
+    let icon: String
+    let subgroups: [PackSubGroup]
+    var allItems: [PackingItem] { subgroups.flatMap(\.items) }
+}
+
 /// Full-page packing list: filter by person and category, grouped, with per-item
 /// editing (each item is assigned to a traveler on the trip).
 struct PackingListView: View {
@@ -17,6 +34,7 @@ struct PackingListView: View {
     @Environment(TripsStore.self) private var trips
 
     @State private var grouping: Grouping = .person
+    @State private var subGroupOn = true
     @State private var personFilter: UUID?
     @State private var categoryFilter: String?
     @State private var editingItem: PackingItem?
@@ -28,17 +46,16 @@ struct PackingListView: View {
 
     enum Grouping: String, CaseIterable { case person = "Person", category = "Category" }
 
-    /// Reassign dragged items to a group — sets the person (Person grouping) or
-    /// category (Category grouping) to match the drop target, then persists.
-    private func moveItems(_ ids: [String],
-                           to group: (title: String, icon: String, items: [PackingItem])) async {
+    /// Reassign dragged items to a primary group — sets the person (Person
+    /// grouping) or category (Category grouping) to match the drop target.
+    private func moveItems(_ ids: [String], toPrimary group: PackPrimaryGroup) async {
+        let targetPerson = group.allItems.first?.memberID
         for id in ids {
             guard let item = store.packing.first(where: { $0.id.uuidString == id }) else { continue }
             var updated = item
             if grouping == .person {
-                let target = group.items.first?.memberID
-                guard updated.memberID != target else { continue }
-                updated.memberID = target
+                guard updated.memberID != targetPerson else { continue }
+                updated.memberID = targetPerson
             } else {
                 let target = group.title == "Other" ? nil : group.title
                 guard (updated.category?.nilIfBlank ?? "Other") != group.title else { continue }
@@ -100,19 +117,22 @@ struct PackingListView: View {
                         Spacer()
                     }
                 }
-                ForEach(groups, id: \.title) { group in
+                ForEach(primaryGroups) { group in
                     Section {
-                        ForEach(group.items) { item in
-                            PackingRow(item: item, icon: trips.icon(forCategory: item.category),
-                                       subtitle: subtitle(for: item, in: group)) {
-                                Task { await store.togglePacking(item) }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { editingItem = item }
-                            .draggable(item.id.uuidString)
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
-                                    Label("Delete", systemImage: "trash")
+                        ForEach(group.subgroups) { sub in
+                            if sub.title != nil { subHeader(sub) }
+                            ForEach(sub.items) { item in
+                                PackingRow(item: item, icon: trips.icon(forCategory: item.category),
+                                           subtitle: activeSub == nil ? subtitle(for: item) : nil) {
+                                    Task { await store.togglePacking(item) }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture { editingItem = item }
+                                .draggable(item.id.uuidString)
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                         }
@@ -123,8 +143,8 @@ struct PackingListView: View {
                             Spacer()
                             Button {
                                 addContext = PackingAddContext(
-                                    person: grouping == .person ? group.items.first?.memberID : personFilter,
-                                    category: grouping == .category ? group.items.first?.category : categoryFilter)
+                                    person: grouping == .person ? group.allItems.first?.memberID : personFilter,
+                                    category: grouping == .category ? group.allItems.first?.category : categoryFilter)
                             } label: {
                                 Image(systemName: "plus.circle").font(.subheadline)
                             }
@@ -142,7 +162,7 @@ struct PackingListView: View {
                         // Drop an item's card here to reassign it to this person /
                         // category (its member/category updates automatically).
                         .dropDestination(for: String.self) { ids, _ in
-                            Task { await moveItems(ids, to: group) }
+                            Task { await moveItems(ids, toPrimary: group) }
                             return true
                         } isTargeted: { dropTargetTitle = $0 ? group.title : nil }
                     }
@@ -156,6 +176,11 @@ struct PackingListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Picker("Then by", selection: $subGroupOn) {
+                        Text("No sub-groups").tag(false)
+                        Text("Sub-group by \(grouping == .person ? "category" : "person")").tag(true)
+                    }
+                    Divider()
                     Button("Add item", systemImage: "plus") {
                         addContext = PackingAddContext(person: personFilter, category: categoryFilter)
                     }
@@ -230,26 +255,79 @@ struct PackingListView: View {
         return Self.headerPalette[Int(sum) % Self.headerPalette.count]
     }
 
-    private var groups: [(title: String, icon: String, items: [PackingItem])] {
-        switch grouping {
-        case .person:
-            return Dictionary(grouping: filtered, by: \.memberID)
-                .map { key, items -> (String, String, [PackingItem]) in
-                    let title = key.flatMap { family.memberName(id: $0) } ?? "Everyone"
-                    return (title, key == nil ? "person.2.circle" : "person.circle", items.sorted { $0.item < $1.item })
-                }
-                .sorted { $0.0 < $1.0 }
-                .map { (title: $0.0, icon: $0.1, items: $0.2) }
-        case .category:
-            return Dictionary(grouping: filtered, by: { $0.category?.nilIfBlank ?? "Other" })
-                .map { ($0.key, trips.icon(forCategory: $0.key), $0.value.sorted { $0.item < $1.item }) }
-                .sorted { $0.0 < $1.0 }
-                .map { (title: $0.0, icon: $0.1, items: $0.2) }
+    /// The active secondary dimension, or nil when sub-grouping is off (only two
+    /// dimensions exist, so it's always "the other one").
+    private var activeSub: Grouping? {
+        guard subGroupOn else { return nil }
+        return grouping == .person ? .category : .person
+    }
+
+    private func title(for dim: Grouping, item: PackingItem) -> String {
+        switch dim {
+        case .person: return item.memberID.flatMap { family.memberName(id: $0) } ?? "Everyone"
+        case .category: return item.category?.nilIfBlank ?? "Other"
         }
     }
 
-    /// Secondary label per row — the dimension not used for grouping.
-    private func subtitle(for item: PackingItem, in group: (title: String, icon: String, items: [PackingItem])) -> String? {
+    private func icon(for dim: Grouping, title: String, items: [PackingItem]) -> String {
+        switch dim {
+        case .person: return items.first?.memberID == nil ? "person.2.circle" : "person.circle"
+        case .category: return trips.icon(forCategory: title)
+        }
+    }
+
+    /// Alphabetical, but the catch-all buckets ("Other" / "Everyone") sort last.
+    private func subGroupBefore(_ a: String, _ b: String) -> Bool {
+        let catchAll: (String) -> Bool = { $0 == "Other" || $0 == "Everyone" }
+        if catchAll(a) != catchAll(b) { return !catchAll(a) }
+        return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+    }
+
+    private var primaryGroups: [PackPrimaryGroup] {
+        Dictionary(grouping: filtered, by: { title(for: grouping, item: $0) })
+            .map { pTitle, pItems -> PackPrimaryGroup in
+                let subgroups: [PackSubGroup]
+                if let sub = activeSub {
+                    subgroups = Dictionary(grouping: pItems, by: { title(for: sub, item: $0) })
+                        .map { sTitle, sItems in
+                            PackSubGroup(title: sTitle,
+                                         icon: icon(for: sub, title: sTitle, items: sItems),
+                                         items: sItems.sorted { $0.item < $1.item })
+                        }
+                        .sorted { subGroupBefore($0.title ?? "", $1.title ?? "") }
+                } else {
+                    subgroups = [PackSubGroup(title: nil, icon: nil, items: pItems.sorted { $0.item < $1.item })]
+                }
+                return PackPrimaryGroup(title: pTitle,
+                                        icon: icon(for: grouping, title: pTitle, items: pItems),
+                                        subgroups: subgroups)
+            }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Small sub-heading row shown above each secondary bucket.
+    private func subHeader(_ sub: PackSubGroup) -> some View {
+        HStack(spacing: 6) {
+            if let icon = sub.icon { Image(systemName: icon).font(.caption2) }
+            Text(sub.title ?? "").font(.caption.weight(.semibold))
+            Spacer()
+            Button {
+                addContext = PackingAddContext(person: sub.items.first?.memberID,
+                                               category: sub.items.first?.category?.nilIfBlank)
+            } label: {
+                Image(systemName: "plus.circle").font(.caption)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add to \(sub.title ?? "")")
+        }
+        .foregroundStyle(.secondary)
+        .padding(.leading, 6)
+        .listRowSeparator(.hidden)
+    }
+
+    /// Secondary label per row — the dimension not used for grouping (shown only
+    /// when sub-grouping is off, since otherwise the sub-header covers it).
+    private func subtitle(for item: PackingItem) -> String? {
         switch grouping {
         case .person: return item.category?.nilIfBlank
         case .category: return item.memberID.flatMap { family.memberName(id: $0) } ?? "Everyone"

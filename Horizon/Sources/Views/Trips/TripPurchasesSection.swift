@@ -103,7 +103,11 @@ struct PurchaseRow: View {
                 if let notes = item.notes?.nilIfBlank {
                     Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
                 }
-                if let by = item.loggedBy, let name = family.memberName(id: by) {
+                // Purchased items show who paid (the useful fact on an expense);
+                // to-buy items show who added them to the list.
+                if item.status == .purchased, let by = item.paidBy, let name = family.memberName(id: by) {
+                    Text("Purchased by \(name)").font(.caption2).foregroundStyle(.tertiary)
+                } else if let by = item.loggedBy, let name = family.memberName(id: by) {
                     Text("Added by \(name)").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -166,10 +170,10 @@ struct PurchaseEditView: View {
                                options: categoryOptions.map { .init(id: $0, name: $0, icon: ExpenseCategory.icon(for: $0)) },
                                pickIcon: "tag")
                 }
-                Section("Store") {
-                    ComboField(placeholder: "Search or add a store / site", text: $storeText,
-                               options: trips.shoppingStores.map { .init(id: $0.id.uuidString, name: $0.name, icon: "storefront") },
-                               pickIcon: "storefront",
+                Section("Where") {
+                    ComboField(placeholder: "Search or add a store / place", text: $storeText,
+                               options: trips.shoppingStores.map { .init(id: $0.id.uuidString, name: $0.name, icon: "mappin.and.ellipse") },
+                               pickIcon: "mappin.and.ellipse",
                                onAdd: { name in
                                    Task { await trips.createShoppingStore(familyID: familyID, name: name) }
                                })

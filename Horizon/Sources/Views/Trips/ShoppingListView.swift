@@ -29,7 +29,9 @@ struct TripMoneyView: View {
     @Environment(TripsStore.self) private var trips
 
     enum Mode: String, CaseIterable { case shopping = "Shopping", expenses = "Expenses" }
-    enum Grouping: String, CaseIterable { case category = "Category", store = "Store" }
+    enum Grouping: String, CaseIterable { case category = "Category", store = "Where" }
+    /// Catch-all bucket label for items with no "where" set.
+    private static let noWhere = "No location"
 
     @State private var mode: Mode = .shopping
     // Persisted so the grouping choice survives relaunches (as the old inline
@@ -69,10 +71,10 @@ struct TripMoneyView: View {
     private func title(for dim: Grouping, item: Expense) -> String {
         switch dim {
         case .category: return item.category.nilIfBlank ?? "Other"
-        case .store:    return item.purchasedFrom?.nilIfBlank ?? "No store"
+        case .store:    return item.purchasedFrom?.nilIfBlank ?? Self.noWhere
         }
     }
-    private func icon(for dim: Grouping) -> String { dim == .category ? "tag" : "storefront" }
+    private func icon(for dim: Grouping) -> String { dim == .category ? "tag" : "mappin.and.ellipse" }
 
     private var storesInList: [String] {
         Array(Set(sourceItems.compactMap { $0.purchasedFrom?.nilIfBlank })).sorted()
@@ -85,7 +87,7 @@ struct TripMoneyView: View {
 
     /// Alphabetical, but the catch-all buckets ("Other" / "No store") sort last.
     private func catchAllLast(_ a: String, _ b: String) -> Bool {
-        let isCatch: (String) -> Bool = { $0 == "Other" || $0 == "No store" }
+        let isCatch: (String) -> Bool = { $0 == "Other" || $0 == Self.noWhere }
         if isCatch(a) != isCatch(b) { return !isCatch(a) }
         return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
     }
@@ -196,6 +198,7 @@ struct TripMoneyView: View {
                 }
             }
         }
+        .listSectionSpacing(.compact)
         .navigationTitle("Money")
         #if !targetEnvironment(macCatalyst)
         .navigationBarTitleDisplayMode(.inline)
@@ -329,7 +332,7 @@ struct TripMoneyView: View {
     private func setDimension(_ dim: Grouping, on item: inout Expense, to title: String) {
         switch dim {
         case .category: item.category = title
-        case .store:    item.purchasedFrom = (title == "No store") ? nil : title
+        case .store:    item.purchasedFrom = (title == Self.noWhere) ? nil : title
         }
     }
 

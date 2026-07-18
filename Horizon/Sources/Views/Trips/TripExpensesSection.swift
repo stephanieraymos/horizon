@@ -116,7 +116,7 @@ struct ExpenseEditView: View {
     @State private var amountText: String
     @State private var spentOn: Date
     @State private var category: String
-    @State private var placeText: String = ""
+    @State private var whereText: String
     @State private var involved: Set<UUID>
     @State private var shares: [UUID: String]
 
@@ -137,6 +137,7 @@ struct ExpenseEditView: View {
         _amountText = State(initialValue: expense.amount > 0 ? String(format: "%.2f", expense.amount) : "")
         _spentOn = State(initialValue: expense.spentOn ?? Date())
         _category = State(initialValue: expense.category)
+        _whereText = State(initialValue: expense.purchasedFrom ?? "")
         let existing = store.splits(for: expense)
         _involved = State(initialValue: Set(existing.map(\.memberID)))
         _shares = State(initialValue: Dictionary(uniqueKeysWithValues:
@@ -160,7 +161,16 @@ struct ExpenseEditView: View {
                         .keyboardType(.decimalPad)
                         #endif
                     DatePicker("Date", selection: $spentOn, displayedComponents: .date)
-                    PlaceComboField(placeholder: "Place (optional)", text: $placeText, placeID: $draft.placeID)
+                    // Shared "Where" list with Shopping (fam_shopping_stores), so a
+                    // vendor typed once autocompletes in both places.
+                    ComboField(placeholder: "Where (optional)", text: $whereText,
+                               options: trips.shoppingStores.map { .init(id: $0.id.uuidString, name: $0.name, icon: "mappin.and.ellipse") },
+                               pickIcon: "mappin.and.ellipse",
+                               onAdd: { name in
+                                   if let fid = family.familyID {
+                                       Task { await trips.createShoppingStore(familyID: fid, name: name) }
+                                   }
+                               })
                     Picker("Paid by", selection: $draft.paidBy) {
                         Text("—").tag(UUID?.none)
                         ForEach(eligibleMembers) { Text($0.name).tag(UUID?.some($0.id)) }
@@ -207,9 +217,6 @@ struct ExpenseEditView: View {
             }
             .navigationTitle("Expense")
             .onAppear {
-                if let pid = draft.placeID, let p = trips.places.first(where: { $0.id == pid }) {
-                    placeText = p.name
-                }
                 // Default the payer to the current member (usually the payer).
                 if draft.paidBy == nil { draft.paidBy = family.currentMember?.id }
             }
@@ -244,7 +251,11 @@ struct ExpenseEditView: View {
         draft.amount = total
         draft.category = category
         draft.spentOn = spentOn
-        if placeText.nilIfBlank == nil { draft.placeID = nil }  // don't keep a link to a cleared place
+        draft.purchasedFrom = whereText.nilIfBlank
+        // Persist a brand-new vendor to the shared list so it's reusable.
+        if let name = whereText.nilIfBlank, trips.store(named: name) == nil, let fid = family.familyID {
+            await trips.createShoppingStore(familyID: fid, name: name)
+        }
         if draft.loggedBy == nil { draft.loggedBy = family.currentMember?.id }
         let newSplits: [ExpenseSplit] = involved.compactMap { id in
             let amt = Double(shares[id] ?? "") ?? 0

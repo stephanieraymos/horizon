@@ -31,16 +31,18 @@ enum NotificationManager {
         let cal = Calendar.current
         let now = Date()
 
-        // Trips: "start packing" 3 days before departure at 9am.
+        // Trips: "start packing" reminder this many days before departure, at 9am.
+        // The body must use the same lead time as the trigger — computing days
+        // from `now` (schedule time) baked a stale count into the fired alert.
+        let tripLeadDays = 3
         for trip in trips {
             guard let depart = trip.departDate else { continue }
-            guard let fire = cal.date(byAdding: .day, value: -3, to: cal.startOfDay(for: depart)),
+            guard let fire = cal.date(byAdding: .day, value: -tripLeadDays, to: cal.startOfDay(for: depart)),
                   let at9 = cal.date(bySettingHour: 9, minute: 0, second: 0, of: fire),
                   at9 > now else { continue }
-            let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: depart)).day ?? 3
             schedule(id: "trip-\(trip.id.uuidString)",
                      title: "✈️ \(trip.name)",
-                     body: "Your trip is in \(days) days — time to start packing!",
+                     body: "Your trip is in \(tripLeadDays) days — time to start packing!",
                      at: at9)
         }
 

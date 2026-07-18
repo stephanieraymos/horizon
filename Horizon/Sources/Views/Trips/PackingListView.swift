@@ -11,14 +11,15 @@ private struct PackingAddContext: Identifiable {
 /// A secondary bucket inside a primary group (e.g. "Bathroom" under a person).
 /// `title == nil` means sub-grouping is off — just a flat list of items.
 private struct PackSubGroup: Identifiable {
-    let id = UUID()
+    // Stable identity so ForEach diffs by title, not a per-render UUID.
+    var id: String { title ?? "" }
     let title: String?
     let icon: String?
     let items: [PackingItem]
 }
 
 private struct PackPrimaryGroup: Identifiable {
-    let id = UUID()
+    var id: String { title }
     let title: String
     let icon: String
     let subgroups: [PackSubGroup]

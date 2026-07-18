@@ -345,18 +345,20 @@ final class TripDetailStore {
         var days = itinerary
         var affected = Set<UUID>()
 
-        if let fromDayID, let i = days.firstIndex(where: { $0.id == fromDayID }),
-           !cal.isDate(days[i].dayDate, inSameDayAs: date) {
+        // Remove this activity from EVERY row it currently appears in. A single
+        // date can span multiple day rows; the old code only updated the first
+        // row for the date, so editing an item that lived in a later row appended
+        // a duplicate (both then rendered with the new time under one id, and
+        // deleting the copy left the stale original behind).
+        for i in days.indices where days[i].activities.contains(where: { $0.id == activity.id }) {
             days[i].activities.removeAll { $0.id == activity.id }
             affected.insert(days[i].id)
         }
 
+        // Place it on the target date — reuse the first existing row for that
+        // date, else create one.
         if let i = days.firstIndex(where: { cal.isDate($0.dayDate, inSameDayAs: date) }) {
-            if let a = days[i].activities.firstIndex(where: { $0.id == activity.id }) {
-                days[i].activities[a] = activity
-            } else {
-                days[i].activities.append(activity)
-            }
+            days[i].activities.append(activity)
             affected.insert(days[i].id)
         } else {
             let day = ItineraryDay(tripID: tripID, dayDate: cal.startOfDay(for: date), activities: [activity])

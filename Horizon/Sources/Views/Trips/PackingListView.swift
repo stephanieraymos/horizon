@@ -121,7 +121,7 @@ struct PackingListView: View {
                 ForEach(primaryGroups) { group in
                     Section {
                         ForEach(group.subgroups) { sub in
-                            if sub.title != nil { subHeader(sub) }
+                            if sub.title != nil { subHeader(sub, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PackingRow(item: item, icon: trips.icon(forCategory: item.category),
                                            subtitle: activeSub == nil ? subtitle(for: item) : nil) {
@@ -306,11 +306,13 @@ struct PackingListView: View {
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    /// Small sub-heading row shown above each secondary bucket.
-    private func subHeader(_ sub: PackSubGroup) -> some View {
+    /// Small sub-heading row shown above each secondary bucket, tinted with its
+    /// parent group's colour so it reads as a sub-section, not another item.
+    private func subHeader(_ sub: PackSubGroup, color: Color) -> some View {
         HStack(spacing: 6) {
             if let icon = sub.icon { Image(systemName: icon).font(.caption2) }
             Text(sub.title ?? "").font(.caption.weight(.semibold))
+                .textCase(.uppercase).kerning(0.4)
             Spacer()
             Button {
                 addContext = PackingAddContext(person: sub.items.first?.memberID,
@@ -321,7 +323,7 @@ struct PackingListView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add to \(sub.title ?? "")")
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(color)
         .padding(.leading, 6)
         .listRowSeparator(.hidden)
     }

@@ -59,10 +59,12 @@ struct TripPurchasesSection: View {
 struct PurchaseRow: View {
     let item: Expense
     let onToggle: () -> Void
-    let onEdit: () -> Void
     @Environment(FamilyStore.self) private var family
 
     var body: some View {
+        // No Button wraps the row body — a full-row Button swallows the long-press
+        // that `.draggable` needs, which broke drag-to-regroup. The caller adds the
+        // tap-to-edit via `.onTapGesture`; only the checkbox stays a Button.
         HStack(spacing: 10) {
             Button(action: onToggle) {
                 Image(systemName: item.status.systemImage)
@@ -70,39 +72,33 @@ struct PurchaseRow: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: onEdit) {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.name).lineLimit(1)
-                            .strikethrough(item.status == .purchased)
-                            .foregroundStyle(item.status == .purchased ? .secondary : .primary)
-                        if item.status == .inCart {
-                            Text("In cart").font(.caption2).foregroundStyle(Theme.Colors.brand)
-                        } else if let from = item.purchasedFrom?.nilIfBlank {
-                            Text(from).font(.caption2).foregroundStyle(.secondary)
-                        }
-                        if let notes = item.notes?.nilIfBlank {
-                            Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
-                        }
-                        if let by = item.loggedBy, let name = family.memberName(id: by) {
-                            Text("Added by \(name)").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                    }
-                    Spacer()
-                    if let amt = TripFormat.money(item.amountDollars) {
-                        Text(amt).font(.subheadline).foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name).lineLimit(1)
+                    .strikethrough(item.status == .purchased)
+                    .foregroundStyle(item.status == .purchased ? .secondary : .primary)
+                if item.status == .inCart {
+                    Text("In cart").font(.caption2).foregroundStyle(Theme.Colors.brand)
+                } else if let from = item.purchasedFrom?.nilIfBlank {
+                    Text(from).font(.caption2).foregroundStyle(.secondary)
                 }
-                .contentShape(Rectangle())
+                if let notes = item.notes?.nilIfBlank {
+                    Text(notes).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+                }
+                if let by = item.loggedBy, let name = family.memberName(id: by) {
+                    Text("Added by \(name)").font(.caption2).foregroundStyle(.tertiary)
+                }
             }
-            .buttonStyle(.plain)
-
+            Spacer()
+            if let amt = TripFormat.money(item.amountDollars) {
+                Text(amt).font(.subheadline).foregroundStyle(.secondary)
+            }
             if let url = item.linkURL {
                 Link(destination: url) { Image(systemName: "link").font(.caption) }
                     .buttonStyle(.plain).foregroundStyle(Theme.Colors.brand)
             }
         }
         .padding(.vertical, 3)
+        .contentShape(Rectangle())
     }
 }
 

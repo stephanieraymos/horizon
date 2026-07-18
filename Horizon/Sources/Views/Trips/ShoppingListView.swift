@@ -124,11 +124,12 @@ struct ShoppingListView: View {
                 ForEach(primaryGroups) { group in
                     Section {
                         ForEach(group.subgroups) { sub in
-                            if sub.title != nil { subHeader(sub, color: headerColor(group.title)) }
+                            if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PurchaseRow(item: item,
-                                            onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
-                                            onEdit: { editing = item })
+                                            onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } })
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { editing = item }
                                     .draggable(item.id.uuidString)
                                     .swipeActions(edge: .trailing) {
                                         Button(role: .destructive) { Task { await store.deleteExpense(item) } } label: {
@@ -196,8 +197,9 @@ struct ShoppingListView: View {
         } isTargeted: { dropTargetTitle = $0 ? group.title : nil }
     }
 
-    private func subHeader(_ sub: ShopSubGroup, color: Color) -> some View {
-        HStack(spacing: 6) {
+    private func subHeader(_ sub: ShopSubGroup, in group: ShopPrimaryGroup, color: Color) -> some View {
+        let key = "\(group.title)|\(sub.title ?? "")"
+        return HStack(spacing: 6) {
             if let icon = sub.icon { Image(systemName: icon).font(.caption2) }
             Text(sub.title ?? "").font(.caption.weight(.semibold)).textCase(.uppercase).kerning(0.4)
             Spacer()
@@ -211,7 +213,16 @@ struct ShoppingListView: View {
         }
         .foregroundStyle(color)
         .padding(.leading, 6)
+        .padding(.vertical, 2)
+        .background(dropTargetTitle == key ? color.opacity(0.18) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6))
         .listRowSeparator(.hidden)
+        .contentShape(Rectangle())
+        // Drop an item here to move it into this primary + sub-group.
+        .dropDestination(for: String.self) { ids, _ in
+            Task { await moveItems(ids, into: group, sub: sub) }
+            return true
+        } isTargeted: { dropTargetTitle = $0 ? key : nil }
     }
 
     private func chip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -231,17 +242,32 @@ struct ShoppingListView: View {
         return e
     }
 
-    /// Reassign dragged items to a primary group — sets the tag (Tag grouping) or
-    /// store (Store grouping) to match the drop target.
+    private func setDimension(_ dim: Grouping, on item: inout Expense, to title: String) {
+        switch dim {
+        case .tag:   item.tag = (title == "Other") ? nil : title
+        case .store: item.purchasedFrom = (title == "No store") ? nil : title
+        }
+    }
+
+    /// Drop onto a primary header — set the primary dimension to match.
     private func moveItems(_ ids: [String], toPrimary group: ShopPrimaryGroup) async {
         for id in ids {
             guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
             var updated = item
-            if grouping == .tag {
-                updated.tag = (group.title == "Other") ? nil : group.title
-            } else {
-                updated.purchasedFrom = (group.title == "No store") ? nil : group.title
-            }
+            setDimension(grouping, on: &updated, to: group.title)
+            await store.saveExpense(updated, splits: store.splits(for: updated))
+        }
+    }
+
+    /// Drop onto a sub-header — place the item in BOTH the primary group and the
+    /// sub-group it was dropped into.
+    private func moveItems(_ ids: [String], into group: ShopPrimaryGroup, sub: ShopSubGroup) async {
+        guard let subDim = activeSub, let sTitle = sub.title else { return }
+        for id in ids {
+            guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            setDimension(grouping, on: &updated, to: group.title)
+            setDimension(subDim, on: &updated, to: sTitle)
             await store.saveExpense(updated, splits: store.splits(for: updated))
         }
     }

@@ -66,6 +66,25 @@ struct PackingListView: View {
         }
     }
 
+    /// Drop onto a sub-header — place the item in BOTH the primary group and the
+    /// sub-group it was dropped into (person + category).
+    private func moveItems(_ ids: [String], into group: PackPrimaryGroup, sub: PackSubGroup) async {
+        let primaryPerson = group.allItems.first?.memberID
+        let subPerson = sub.items.first?.memberID
+        for id in ids {
+            guard let item = store.packing.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            if grouping == .person {
+                updated.memberID = primaryPerson
+                updated.category = (sub.title == "Other") ? nil : sub.title
+            } else {
+                updated.category = (group.title == "Other") ? nil : group.title
+                updated.memberID = subPerson
+            }
+            await store.savePacking(updated)
+        }
+    }
+
     /// Members on this trip (fallback: whole family).
     private var travelerMembers: [FamilyMember] {
         let names = Set((trip.travelers ?? []).map { $0.lowercased() })
@@ -121,7 +140,7 @@ struct PackingListView: View {
                 ForEach(primaryGroups) { group in
                     Section {
                         ForEach(group.subgroups) { sub in
-                            if sub.title != nil { subHeader(sub, color: headerColor(group.title)) }
+                            if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PackingRow(item: item, icon: trips.icon(forCategory: item.category),
                                            subtitle: activeSub == nil ? subtitle(for: item) : nil) {
@@ -308,8 +327,9 @@ struct PackingListView: View {
 
     /// Small sub-heading row shown above each secondary bucket, tinted with its
     /// parent group's colour so it reads as a sub-section, not another item.
-    private func subHeader(_ sub: PackSubGroup, color: Color) -> some View {
-        HStack(spacing: 6) {
+    private func subHeader(_ sub: PackSubGroup, in group: PackPrimaryGroup, color: Color) -> some View {
+        let key = "\(group.title)|\(sub.title ?? "")"
+        return HStack(spacing: 6) {
             if let icon = sub.icon { Image(systemName: icon).font(.caption2) }
             Text(sub.title ?? "").font(.caption.weight(.semibold))
                 .textCase(.uppercase).kerning(0.4)
@@ -325,7 +345,16 @@ struct PackingListView: View {
         }
         .foregroundStyle(color)
         .padding(.leading, 6)
+        .padding(.vertical, 2)
+        .background(dropTargetTitle == key ? color.opacity(0.18) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6))
         .listRowSeparator(.hidden)
+        .contentShape(Rectangle())
+        // Drop an item here to move it into this primary + sub-group.
+        .dropDestination(for: String.self) { ids, _ in
+            Task { await moveItems(ids, into: group, sub: sub) }
+            return true
+        } isTargeted: { dropTargetTitle = $0 ? key : nil }
     }
 
     /// Secondary label per row — the dimension not used for grouping (shown only

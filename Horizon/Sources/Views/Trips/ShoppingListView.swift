@@ -165,11 +165,24 @@ struct TripMoneyView: View {
                             if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PurchaseRow(item: item,
-                                            onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
+                                            onToggle: mode == .shopping
+                                                ? { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } }
+                                                : nil,
                                             strikeWhenPurchased: mode == .shopping)
                                     .contentShape(Rectangle())
                                     .onTapGesture { open(item) }
                                     .draggable(item.id.uuidString)
+                                    .contextMenu {
+                                        Button("Edit", systemImage: "pencil") { open(item) }
+                                        if mode == .expenses {
+                                            Button("Move to shopping", systemImage: "cart") {
+                                                Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) }
+                                            }
+                                        }
+                                        Button("Delete", systemImage: "trash", role: .destructive) {
+                                            Task { await store.deleteExpense(item) }
+                                        }
+                                    }
                                     .swipeActions(edge: .trailing) {
                                         Button(role: .destructive) { Task { await store.deleteExpense(item) } } label: {
                                             Label("Delete", systemImage: "trash")

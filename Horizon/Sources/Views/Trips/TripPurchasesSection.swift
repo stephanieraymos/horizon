@@ -63,7 +63,10 @@ struct TripMoneySection: View {
 
 struct PurchaseRow: View {
     let item: Expense
-    let onToggle: () -> Void
+    /// Tapping the checkbox toggles purchased (shopping list). Pass nil in the
+    /// expense ledger so the leading glyph is an inert category icon — un-logging
+    /// an expense there is a long-press "Move to shopping" instead of a stray tap.
+    var onToggle: (() -> Void)? = nil
     /// Shopping mode strikes through purchased items (checked off the list); the
     /// expense ledger shows them as plain rows (everything there is purchased).
     var strikeWhenPurchased: Bool = true
@@ -74,11 +77,17 @@ struct PurchaseRow: View {
         // that `.draggable` needs, which broke drag-to-regroup. The caller adds the
         // tap-to-edit via `.onTapGesture`; only the checkbox stays a Button.
         HStack(spacing: 10) {
-            Button(action: onToggle) {
-                Image(systemName: item.status.systemImage)
-                    .foregroundStyle(item.status == .purchased ? Theme.Colors.brand : .secondary)
+            if let onToggle {
+                Button(action: onToggle) {
+                    Image(systemName: item.status.systemImage)
+                        .foregroundStyle(item.status == .purchased ? Theme.Colors.brand : .secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Image(systemName: ExpenseCategory.icon(for: item.category))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 1) {
                 // Expenses can be logged without a description; fall back to the

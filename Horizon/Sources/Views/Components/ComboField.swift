@@ -70,11 +70,7 @@ struct ComboField: View {
             }
 
         ForEach(matches) { opt in
-            Button {
-                text = opt.name
-                onPick(opt)
-                focused = false
-            } label: {
+            Button { pick(opt) } label: {
                 HStack(spacing: 10) {
                     Image(systemName: opt.icon ?? pickIcon)
                         .foregroundStyle(.secondary).frame(width: 20)
@@ -87,20 +83,37 @@ struct ComboField: View {
                     Spacer()
                     Image(systemName: "arrow.up.left").font(.caption2).foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The first tap in a focused Form field often only dismisses the
+            // keyboard and never fires the Button — commit via a simultaneous
+            // gesture so the selection always lands.
+            .simultaneousGesture(TapGesture().onEnded { pick(opt) })
         }
 
         if showAdd {
-            Button {
-                let value = trimmed
-                addedValue = value
-                onAdd(value)
-                focused = false
-            } label: {
+            Button { add() } label: {
                 Label("Add \u{201C}\(trimmed)\u{201D}", systemImage: "plus.circle.fill")
                     .foregroundStyle(Theme.Colors.brand)
+                    .contentShape(Rectangle())
             }
+            .simultaneousGesture(TapGesture().onEnded { add() })
         }
+    }
+
+    private func pick(_ opt: Option) {
+        text = opt.name
+        onPick(opt)
+        focused = false
+    }
+
+    private func add() {
+        let value = trimmed
+        guard !value.isEmpty else { return }
+        addedValue = value
+        text = value
+        onAdd(value)
+        focused = false
     }
 }

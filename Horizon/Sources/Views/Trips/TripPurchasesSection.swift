@@ -81,7 +81,9 @@ struct PurchaseRow: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.name).lineLimit(1)
+                // Expenses can be logged without a description; fall back to the
+                // category so the ledger never shows a blank row.
+                Text(item.name.nilIfBlank ?? item.category).lineLimit(1)
                     .strikethrough(strikeWhenPurchased && item.status == .purchased)
                     .foregroundStyle(strikeWhenPurchased && item.status == .purchased ? .secondary : .primary)
                 if item.status == .inCart {

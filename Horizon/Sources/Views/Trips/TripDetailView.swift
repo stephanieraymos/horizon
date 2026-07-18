@@ -52,7 +52,7 @@ struct TripDetailView: View {
                 notesSection
                 TripTodosSection(store: detail, familyID: current.familyID)
                 TripPackingSection(store: detail, trip: current)
-                TripPurchasesSection(store: detail, familyID: current.familyID)
+                TripPurchasesSection(store: detail, trip: current, familyID: current.familyID)
                 TripExpensesSection(store: detail, trip: current)
                 TripDocumentsSection(store: detail, familyID: current.familyID)
             }

@@ -1,166 +1,62 @@
 import SwiftUI
 
-/// The Shopping view — items still to buy (unified `fam_trip_expenses` rows with
-/// a non-purchased status). Checking one off marks it purchased, moving it into
-/// Expenses and the budget. Items can be grouped by tag or by store, and filtered
-/// to a single store.
+/// Compact shopping summary on the trip detail — count + estimate and a per-tag
+/// snapshot, opening the full grouped shopping list.
 struct TripPurchasesSection: View {
     let store: TripDetailStore
+    let trip: Trip
     let familyID: UUID
-    @Environment(FamilyStore.self) private var family
-    @Environment(TripsStore.self) private var trips
-    @State private var editing: Expense?
 
-    @AppStorage("shopping.groupByStore") private var groupByStore = false
-    @State private var storeFilter: String?
-    @State private var dropTargetKey: String?
-
-    /// Reassign dragged items to a group — sets the store (grouped-by-store) or
-    /// tag (grouped-by-tag) to match the drop target, then persists.
-    private func moveItems(_ ids: [String], toGroup key: String) async {
-        for id in ids {
-            guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
-            var updated = item
-            if groupByStore {
-                updated.purchasedFrom = (key == "No store") ? nil : key
-            } else {
-                updated.tag = (key == "Other") ? nil : key
-            }
-            await store.saveExpense(updated, splits: store.splits(for: updated))
-        }
-    }
-
-    private static let defaultTags = ["Food / Kitchen", "Gear / Tools", "Clothing", "Toiletries", "Other"]
-
-    private func newItem() -> Expense {
-        Expense(tripID: store.tripID, category: ExpenseCategory.merch.rawValue, status: .notPurchased)
-    }
-
-    /// Groups to render: by store or by tag, narrowed to `storeFilter` when set.
-    private var displayGroups: [(key: String, items: [Expense])] {
-        let base: [(key: String, items: [Expense])] = groupByStore
-            ? store.shoppingByStore.map { (key: $0.store, items: $0.items) }
-            : store.shoppingByTag.map { (key: $0.tag, items: $0.items) }
-        guard let f = storeFilter else { return base }
-        return base.compactMap { g in
-            let items = g.items.filter { $0.purchasedFrom?.nilIfBlank == f }
-            return items.isEmpty ? nil : (key: g.key, items: items)
-        }
+    /// Per-tag "count" for a quick glance.
+    private var perTag: [(tag: String, count: Int)] {
+        store.shoppingByTag.map { (tag: $0.tag, count: $0.items.count) }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Shopping").font(.title3.bold())
-                Spacer()
-                Button { editing = newItem() } label: {
-                    Image(systemName: "plus.circle.fill").font(.title3)
-                }
-                .tint(Theme.Colors.brand)
-            }
+            Text("Shopping").font(.title3.bold())
 
-            if store.shoppingItems.isEmpty {
-                Text("Build a shopping list for this trip. Check items off to move them into Expenses.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
-            } else {
-                HStack {
-                    Label("\(store.shoppingToBuyCount) to buy", systemImage: "cart")
-                    Spacer()
-                    if let est = TripFormat.money(store.shoppingProjected), store.shoppingProjected > 0 {
-                        Text("\(est) est.").foregroundStyle(.secondary)
-                    }
-                }
-                .font(.subheadline)
-                .padding().background(Theme.Colors.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-
-                controls
-
-                ForEach(displayGroups, id: \.key) { group in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(group.key).font(.subheadline.bold()).foregroundStyle(.secondary)
-                        ForEach(group.items) { item in
-                            PurchaseRow(item: item,
-                                        onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
-                                        onEdit: { editing = item })
-                                .draggable(item.id.uuidString)
-                                .contextMenu {
-                                    Button("Edit") { editing = item }
-                                    Button("Delete", role: .destructive) { Task { await store.deleteExpense(item) } }
-                                }
+            NavigationLink {
+                ShoppingListView(store: store, trip: trip, familyID: familyID)
+            } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    if store.shoppingItems.isEmpty {
+                        Text("Build a shopping list for this trip. Tap to add items and check them off.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        HStack {
+                            Label("\(store.shoppingToBuyCount) to buy", systemImage: "cart")
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            if let est = TripFormat.money(store.shoppingProjected), store.shoppingProjected > 0 {
+                                Text("\(est) est.").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(dropTargetKey == group.key ? Theme.Colors.brand.opacity(0.12) : .clear,
-                                in: RoundedRectangle(cornerRadius: 10))
-                    // Drop an item here to move it into this store / tag group.
-                    .dropDestination(for: String.self) { ids, _ in
-                        Task { await moveItems(ids, toGroup: group.key) }
-                        return true
-                    } isTargeted: { dropTargetKey = $0 ? group.key : nil }
-                }
-            }
-        }
-        .sheet(item: $editing) { p in
-            PurchaseEditView(store: store, familyID: familyID, item: p,
-                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted())
-        }
-    }
-
-    /// Group-by-store toggle + store filter chips. Only shown once at least one
-    /// item has a store (otherwise there's nothing to filter or group by).
-    @ViewBuilder private var controls: some View {
-        let stores = store.shoppingStoresInList
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Button {
-                    groupByStore.toggle()
-                } label: {
-                    Label(groupByStore ? "Grouped by store" : "Grouped by tag",
-                          systemImage: groupByStore ? "storefront" : "tag")
-                        .font(.caption.weight(.medium))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.brand)
-                Spacer()
-            }
-            if !stores.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        chip("All", selected: storeFilter == nil) { storeFilter = nil }
-                        ForEach(stores, id: \.self) { s in
-                            chip(s, selected: storeFilter == s) {
-                                storeFilter = (storeFilter == s ? nil : s)
+                        if !perTag.isEmpty {
+                            FlowLayout(spacing: 6) {
+                                ForEach(perTag, id: \.tag) { row in
+                                    Text("\(row.tag) \(row.count)")
+                                        .font(.caption)
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Color(.tertiarySystemFill), in: Capsule())
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
-                    .padding(.vertical, 1)
                 }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
             }
+            .buttonStyle(.plain)
         }
-        // Drop a stale filter if its store no longer has any to-buy items.
-        .onChange(of: stores) { _, newStores in
-            if let f = storeFilter, !newStores.contains(f) { storeFilter = nil }
-        }
-    }
-
-    private func chip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(selected ? Theme.Colors.brand : Color(.tertiarySystemFill),
-                            in: Capsule())
-                .foregroundStyle(selected ? .white : .primary)
-        }
-        .buttonStyle(.plain)
     }
 }
 
-private struct PurchaseRow: View {
+struct PurchaseRow: View {
     let item: Expense
     let onToggle: () -> Void
     let onEdit: () -> Void
@@ -210,7 +106,7 @@ private struct PurchaseRow: View {
     }
 }
 
-private struct PurchaseEditView: View {
+struct PurchaseEditView: View {
     let store: TripDetailStore
     let familyID: UUID
     @Environment(FamilyStore.self) private var family

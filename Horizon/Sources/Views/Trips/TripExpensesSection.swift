@@ -1,67 +1,24 @@
 import SwiftUI
 import Charts
 
-struct TripExpensesSection: View {
+/// The spend summary shown atop the unified Money page in Expenses mode:
+/// spent-so-far + budget, a by-category bar chart, per-member totals, and the
+/// who-owes-whom settle-up. (Shopping mode hides all of this.)
+struct ExpenseSummaryView: View {
     let store: TripDetailStore
     let trip: Trip
     @Environment(FamilyStore.self) private var family
-    @State private var editing: Expense?
-    @State private var showConverter = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Expenses").font(.title3.bold())
-                Spacer()
-                Menu {
-                    Button("Add expense", systemImage: "plus") {
-                        editing = Expense(tripID: trip.id, spentOn: trip.departDate ?? Date())
-                    }
-                    Button("Currency converter", systemImage: "dollarsign.arrow.circlepath") {
-                        showConverter = true
-                    }
-                } label: {
-                    Image(systemName: "plus.circle.fill").font(.title3)
-                }
-                .tint(Theme.Colors.brand)
-            }
-
-            if store.purchasedExpenses.isEmpty {
-                Text("Log expenses and split them across who came along.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
-            } else {
-                summary
-                if categoryTotals.count > 1 { categoryChart }
-                ForEach(byCategory, id: \.category) { group in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(group.category, systemImage: ExpenseCategory.icon(for: group.category))
-                            .font(.subheadline.bold()).foregroundStyle(.secondary)
-                        ForEach(group.items) { exp in
-                            ExpenseRow(expense: exp, splitCount: store.splits(for: exp).count)
-                                .onTapGesture { editing = exp }
-                                .contextMenu {
-                                    Button("Edit") { editing = exp }
-                                    Button("Delete", role: .destructive) { Task { await store.deleteExpense(exp) } }
-                                }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            summary
+            if categoryTotals.count > 1 { categoryChart }
         }
-        .sheet(item: $editing) { exp in
-            ExpenseEditView(store: store, expense: exp, travelerNames: trip.travelers ?? [])
-        }
-        .sheet(isPresented: $showConverter) { CurrencyConverterView() }
     }
 
-    // MARK: Category breakdown chart
-
     private var categoryTotals: [(category: String, total: Double)] {
-        byCategory
-            .map { (category: $0.category, total: $0.items.reduce(0) { $0 + $1.amount }) }
+        Dictionary(grouping: store.purchasedExpenses, by: \.category)
+            .map { (category: $0.key, total: $0.value.reduce(0) { $0 + $1.amount }) }
             .sorted { $0.total > $1.total }
     }
 
@@ -116,8 +73,6 @@ struct TripExpensesSection: View {
                 }
             }
 
-            // Only separate the per-member breakdown when there is one — avoids a
-            // dangling line under "Spent so far" on a trip with no spending.
             if !store.perMemberTotals.isEmpty {
                 Divider()
                 ForEach(store.perMemberTotals, id: \.memberID) { row in
@@ -147,34 +102,11 @@ struct TripExpensesSection: View {
         }
         .padding().background(Theme.Colors.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
-
-    private var byCategory: [(category: String, items: [Expense])] {
-        Dictionary(grouping: store.purchasedExpenses, by: \.category)
-            .map { (category: $0.key, items: $0.value) }
-            .sorted { $0.category < $1.category }
-    }
 }
 
-private struct ExpenseRow: View {
-    let expense: Expense
-    let splitCount: Int
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(expense.description?.nilIfBlank ?? expense.category).font(.subheadline)
-                if splitCount > 0 {
-                    Text("Split \(splitCount) ways").font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Text(TripFormat.money(expense.amount) ?? "$0").font(.subheadline)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-private struct ExpenseEditView: View {
+/// Full expense editor (paid-by + splits) — reached by tapping a row in Expenses
+/// mode. Shopping-mode rows use the lighter `PurchaseEditView`.
+struct ExpenseEditView: View {
     let store: TripDetailStore
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss

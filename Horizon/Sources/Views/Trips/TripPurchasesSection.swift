@@ -1,49 +1,54 @@
 import SwiftUI
 
-/// Compact shopping summary on the trip detail — count + estimate and a per-tag
-/// snapshot, opening the full grouped shopping list.
-struct TripPurchasesSection: View {
+/// One combined "Money" card on the trip detail — spent-so-far + budget on top,
+/// to-buy count below — opening the unified Shopping / Expenses page.
+struct TripMoneySection: View {
     let store: TripDetailStore
     let trip: Trip
     let familyID: UUID
 
-    /// Per-tag "count" for a quick glance.
-    private var perTag: [(tag: String, count: Int)] {
-        store.shoppingByTag.map { (tag: $0.tag, count: $0.items.count) }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Shopping").font(.title3.bold())
+            Text("Money").font(.title3.bold())
 
             NavigationLink {
-                ShoppingListView(store: store, trip: trip, familyID: familyID)
+                TripMoneyView(store: store, trip: trip, familyID: familyID)
             } label: {
                 VStack(alignment: .leading, spacing: 10) {
-                    if store.shoppingItems.isEmpty {
-                        Text("Build a shopping list for this trip. Tap to add items and check them off.")
-                            .font(.callout).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        HStack {
-                            Label("\(store.shoppingToBuyCount) to buy", systemImage: "cart")
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            if let est = TripFormat.money(store.shoppingProjected), store.shoppingProjected > 0 {
-                                Text("\(est) est.").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Spent so far").font(.caption).foregroundStyle(.secondary)
+                            Text(TripFormat.money(store.tripTotal) ?? "$0").font(.title3.bold())
                         }
-                        if !perTag.isEmpty {
-                            FlowLayout(spacing: 6) {
-                                ForEach(perTag, id: \.tag) { row in
-                                    Text("\(row.tag) \(row.count)")
-                                        .font(.caption)
-                                        .padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(Color(.tertiarySystemFill), in: Capsule())
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+
+                    if let budget = trip.budget, budget > 0 {
+                        let frac = min(store.tripTotal / budget, 1)
+                        let over = store.tripTotal > budget
+                        ProgressView(value: frac).tint(over ? .red : Theme.Colors.brand)
+                        HStack {
+                            Text("\(TripFormat.money(store.tripTotal) ?? "$0") of \(TripFormat.money(budget) ?? "$0")")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(over ? "Over by \(TripFormat.money(store.tripTotal - budget) ?? "")"
+                                      : "\(TripFormat.money(budget - store.tripTotal) ?? "") left")
+                                .font(.caption2).foregroundStyle(over ? .red : .secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Label(store.shoppingItems.isEmpty ? "Build a shopping list"
+                                                           : "\(store.shoppingToBuyCount) to buy",
+                              systemImage: "cart")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(store.shoppingItems.isEmpty ? .secondary : .primary)
+                        Spacer()
+                        if store.shoppingProjected > 0, let est = TripFormat.money(store.shoppingProjected) {
+                            Text("\(est) est.").font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -59,6 +64,9 @@ struct TripPurchasesSection: View {
 struct PurchaseRow: View {
     let item: Expense
     let onToggle: () -> Void
+    /// Shopping mode strikes through purchased items (checked off the list); the
+    /// expense ledger shows them as plain rows (everything there is purchased).
+    var strikeWhenPurchased: Bool = true
     @Environment(FamilyStore.self) private var family
 
     var body: some View {
@@ -74,8 +82,8 @@ struct PurchaseRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name).lineLimit(1)
-                    .strikethrough(item.status == .purchased)
-                    .foregroundStyle(item.status == .purchased ? .secondary : .primary)
+                    .strikethrough(strikeWhenPurchased && item.status == .purchased)
+                    .foregroundStyle(strikeWhenPurchased && item.status == .purchased ? .secondary : .primary)
                 if item.status == .inCart {
                     Text("In cart").font(.caption2).foregroundStyle(Theme.Colors.brand)
                 } else if let from = item.purchasedFrom?.nilIfBlank {
@@ -111,17 +119,19 @@ struct PurchaseEditView: View {
 
     @State private var draft: Expense
     @State private var amountText: String
-    @State private var tagText: String
+    @State private var categoryText: String
     @State private var storeText: String
-    let tagOptions: [String]
+    /// Shared category vocabulary (same values Expenses use), so a checked-off
+    /// item logs under the category it was filed in — no more everything → Merch.
+    let categoryOptions: [String]
 
-    init(store: TripDetailStore, familyID: UUID, item: Expense, tagOptions: [String]) {
+    init(store: TripDetailStore, familyID: UUID, item: Expense, categoryOptions: [String]) {
         self.store = store
         self.familyID = familyID
-        self.tagOptions = tagOptions
+        self.categoryOptions = categoryOptions
         _draft = State(initialValue: item)
         _amountText = State(initialValue: item.amount == 0 ? "" : String(format: "%.2f", item.amount))
-        _tagText = State(initialValue: item.tag ?? "")
+        _categoryText = State(initialValue: item.category)
         _storeText = State(initialValue: item.purchasedFrom ?? "")
     }
 
@@ -140,9 +150,9 @@ struct PurchaseEditView: View {
                         }
                     }
                 }
-                Section("Tag") {
-                    ComboField(placeholder: "Search or add a tag", text: $tagText,
-                               options: tagOptions.map { .init(id: $0, name: $0, icon: "tag") },
+                Section("Category") {
+                    ComboField(placeholder: "Search or add a category", text: $categoryText,
+                               options: categoryOptions.map { .init(id: $0, name: $0, icon: ExpenseCategory.icon(for: $0)) },
                                pickIcon: "tag")
                 }
                 Section("Store") {
@@ -185,7 +195,7 @@ struct PurchaseEditView: View {
     }
 
     private func save() async {
-        draft.tag = tagText.nilIfBlank
+        draft.category = categoryText.nilIfBlank ?? ExpenseCategory.other.rawValue
         draft.purchasedFrom = storeText.nilIfBlank
         // Persist a brand-new store name to the managed list so it's reusable.
         if let name = storeText.nilIfBlank, trips.store(named: name) == nil {

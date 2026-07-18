@@ -109,30 +109,6 @@ final class TripDetailStore {
     /// Purchased items — the expense ledger view.
     var purchasedExpenses: [Expense] { expenses.filter(\.isPurchased) }
 
-    var shoppingByTag: [(tag: String, items: [Expense])] {
-        Dictionary(grouping: shoppingItems, by: { $0.tag?.nilIfBlank ?? "Other" })
-            .map { (tag: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
-            .sorted { $0.tag < $1.tag }
-    }
-    var shoppingTags: [String] {
-        Array(Set(expenses.compactMap { $0.tag?.nilIfBlank })).sorted()
-    }
-    /// Shopping items grouped by store (nil/blank store → "No store"), for the
-    /// group-by-store view. Sorted case-insensitively, with "No store" last.
-    var shoppingByStore: [(store: String, items: [Expense])] {
-        Dictionary(grouping: shoppingItems, by: { $0.purchasedFrom?.nilIfBlank ?? "No store" })
-            .map { (store: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
-            .sorted {
-                if $0.store == "No store" { return false }
-                if $1.store == "No store" { return true }
-                return $0.store.localizedCaseInsensitiveCompare($1.store) == .orderedAscending
-            }
-    }
-    /// Distinct stores among the to-buy items — powers the filter chips.
-    var shoppingStoresInList: [String] {
-        Array(Set(shoppingItems.compactMap { $0.purchasedFrom?.nilIfBlank }))
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }
     var shoppingToBuyCount: Int { shoppingItems.count }
     /// Estimated cost of everything still to buy (projected spend).
     var shoppingProjected: Double { shoppingItems.reduce(0) { $0 + $1.amount } }

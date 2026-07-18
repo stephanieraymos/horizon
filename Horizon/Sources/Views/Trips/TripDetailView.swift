@@ -52,8 +52,7 @@ struct TripDetailView: View {
                 notesSection
                 TripTodosSection(store: detail, familyID: current.familyID)
                 TripPackingSection(store: detail, trip: current)
-                TripPurchasesSection(store: detail, trip: current, familyID: current.familyID)
-                TripExpensesSection(store: detail, trip: current)
+                TripMoneySection(store: detail, trip: current, familyID: current.familyID)
                 TripDocumentsSection(store: detail, familyID: current.familyID)
             }
             .padding()

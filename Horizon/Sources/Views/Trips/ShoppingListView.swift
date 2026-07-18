@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A secondary bucket inside a primary group (e.g. "Costco" under a tag).
+/// A secondary bucket inside a primary group (e.g. "Costco" under a category).
 private struct ShopSubGroup: Identifiable {
     var id: String { title ?? "" }
     let title: String?
@@ -16,49 +16,71 @@ private struct ShopPrimaryGroup: Identifiable {
     var allItems: [Expense] { subgroups.flatMap(\.items) }
 }
 
-/// Full-page shopping list — mirrors the packing list: group by Tag or Store,
-/// optionally nested by the other under colored sub-headers, drag to re-group,
-/// filter by store, and check items off (which moves them into Expenses).
-struct ShoppingListView: View {
+/// Unified money page: a Shopping | Expenses segmented toggle up top, the group-by
+/// choice (Category / Store) tucked into the ⋯ menu. Both modes share the same
+/// grouping, sub-groups, store filter, and drag-to-regroup; Expenses mode also
+/// shows the spend + settle-up summary. Checking a shopping item off moves it into
+/// Expenses carrying its category (they share the one `category` field now).
+struct TripMoneyView: View {
     let store: TripDetailStore
     let trip: Trip
     let familyID: UUID
     @Environment(FamilyStore.self) private var family
     @Environment(TripsStore.self) private var trips
 
-    enum Grouping: String, CaseIterable { case tag = "Tag", store = "Store" }
+    enum Mode: String, CaseIterable { case shopping = "Shopping", expenses = "Expenses" }
+    enum Grouping: String, CaseIterable { case category = "Category", store = "Store" }
+
+    @State private var mode: Mode = .shopping
     // Persisted so the grouping choice survives relaunches (as the old inline
     // shopping view did).
     @AppStorage("shopping.groupByStore") private var groupByStore = false
     @AppStorage("shopping.subGroupOn") private var subGroupOn = true
-    private var grouping: Grouping { groupByStore ? .store : .tag }
+    private var grouping: Grouping { groupByStore ? .store : .category }
     @State private var storeFilter: String?
-    @State private var editing: Expense?
+    @State private var sheet: ActiveSheet?
     @State private var dropTargetTitle: String?
+    @State private var showConverter = false
 
-    private static let defaultTags = ["Food / Kitchen", "Gear / Tools", "Clothing", "Toiletries", "Other"]
+    private enum ActiveSheet: Identifiable {
+        case shop(Expense), expense(Expense)
+        var id: UUID { switch self { case .shop(let e), .expense(let e): return e.id } }
+    }
+
+    /// The items the current mode shows: to-buy list vs. purchased ledger.
+    private var sourceItems: [Expense] {
+        mode == .shopping ? store.shoppingItems : store.purchasedExpenses
+    }
+
+    /// Shared category vocabulary drawn from every spending item — the "same
+    /// categories database" across shopping and expenses.
+    private var categoryOptions: [String] {
+        Set(ExpenseCategory.allCases.map(\.rawValue))
+            .union(store.expenses.map(\.category))
+            .sorted()
+    }
 
     /// The active secondary dimension, or nil when sub-grouping is off.
     private var activeSub: Grouping? {
         guard subGroupOn else { return nil }
-        return grouping == .tag ? .store : .tag
+        return grouping == .category ? .store : .category
     }
 
     private func title(for dim: Grouping, item: Expense) -> String {
         switch dim {
-        case .tag:   return item.tag?.nilIfBlank ?? "Other"
-        case .store: return item.purchasedFrom?.nilIfBlank ?? "No store"
+        case .category: return item.category.nilIfBlank ?? "Other"
+        case .store:    return item.purchasedFrom?.nilIfBlank ?? "No store"
         }
     }
-    private func icon(for dim: Grouping) -> String { dim == .tag ? "tag" : "storefront" }
+    private func icon(for dim: Grouping) -> String { dim == .category ? "tag" : "storefront" }
 
     private var storesInList: [String] {
-        Array(Set(store.shoppingItems.compactMap { $0.purchasedFrom?.nilIfBlank })).sorted()
+        Array(Set(sourceItems.compactMap { $0.purchasedFrom?.nilIfBlank })).sorted()
     }
 
     private var filtered: [Expense] {
-        guard let f = storeFilter else { return store.shoppingItems }
-        return store.shoppingItems.filter { $0.purchasedFrom?.nilIfBlank == f }
+        guard let f = storeFilter else { return sourceItems }
+        return sourceItems.filter { $0.purchasedFrom?.nilIfBlank == f }
     }
 
     /// Alphabetical, but the catch-all buckets ("Other" / "No store") sort last.
@@ -94,18 +116,34 @@ struct ShoppingListView: View {
         return Self.headerPalette[Int(sum) % Self.headerPalette.count]
     }
 
+    private var emptyView: some View {
+        mode == .shopping
+            ? ContentUnavailableView("Nothing to buy yet", systemImage: "cart",
+                description: Text("Add items, then check them off as you shop."))
+            : ContentUnavailableView("No expenses yet", systemImage: "creditcard",
+                description: Text("Log spending, or check items off the shopping list."))
+    }
+
     var body: some View {
         List {
-            if store.shoppingItems.isEmpty {
-                ContentUnavailableView("Nothing to buy yet", systemImage: "cart",
-                    description: Text("Add items, then check them off as you shop."))
+            Section {
+                Picker("Mode", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+            .listRowBackground(Color.clear)
+
+            if mode == .expenses && !store.purchasedExpenses.isEmpty {
+                Section { ExpenseSummaryView(store: store, trip: trip) }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
+            }
+
+            if sourceItems.isEmpty {
+                Section { emptyView }.listRowBackground(Color.clear)
             } else {
                 Section {
-                    Picker("Group by", selection: Binding(
-                        get: { grouping }, set: { groupByStore = ($0 == .store) })) {
-                        ForEach(Grouping.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
                     if !storesInList.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -117,7 +155,7 @@ struct ShoppingListView: View {
                         }
                     }
                     HStack {
-                        Text("\(filtered.count) to buy").font(.caption).foregroundStyle(.secondary)
+                        Text(countLabel).font(.caption).foregroundStyle(.secondary)
                         Spacer()
                     }
                 }
@@ -127,9 +165,10 @@ struct ShoppingListView: View {
                             if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PurchaseRow(item: item,
-                                            onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } })
+                                            onToggle: { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } },
+                                            strikeWhenPurchased: mode == .shopping)
                                     .contentShape(Rectangle())
-                                    .onTapGesture { editing = item }
+                                    .onTapGesture { open(item) }
                                     .draggable(item.id.uuidString)
                                     .swipeActions(edge: .trailing) {
                                         Button(role: .destructive) { Task { await store.deleteExpense(item) } } label: {
@@ -144,28 +183,67 @@ struct ShoppingListView: View {
                 }
             }
         }
-        .navigationTitle("Shopping")
+        .navigationTitle("Money")
         #if !targetEnvironment(macCatalyst)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Picker("Group by", selection: Binding(
+                        get: { grouping }, set: { groupByStore = ($0 == .store) })) {
+                        ForEach(Grouping.allCases, id: \.self) { Label($0.rawValue, systemImage: icon(for: $0)).tag($0) }
+                    }
                     Picker("Then by", selection: $subGroupOn) {
                         Text("No sub-groups").tag(false)
-                        Text("Sub-group by \(grouping == .tag ? "store" : "tag")").tag(true)
+                        Text("Sub-group by \(grouping == .category ? "store" : "category")").tag(true)
                     }
                     Divider()
-                    Button("Add item", systemImage: "plus") { editing = newItem(tag: nil, store: storeFilter) }
+                    Button("Add", systemImage: "plus") { addItem(category: nil, store: storeFilter) }
+                    Button("Currency converter", systemImage: "dollarsign.arrow.circlepath") { showConverter = true }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
-        .sheet(item: $editing) { p in
-            PurchaseEditView(store: store, familyID: familyID, item: p,
-                             tagOptions: (Set(Self.defaultTags).union(store.shoppingTags)).sorted())
+        .sheet(isPresented: $showConverter) { CurrencyConverterView() }
+        .sheet(item: $sheet) { active in
+            switch active {
+            case .shop(let item):
+                PurchaseEditView(store: store, familyID: familyID, item: item,
+                                 categoryOptions: categoryOptions)
+            case .expense(let item):
+                ExpenseEditView(store: store, expense: item, travelerNames: trip.travelers ?? [])
+            }
         }
         .onChange(of: storesInList) { _, newStores in
             if let f = storeFilter, !newStores.contains(f) { storeFilter = nil }
+        }
+        .onChange(of: mode) { _, _ in storeFilter = nil }
+    }
+
+    private var countLabel: String {
+        mode == .shopping ? "\(filtered.count) to buy" : "\(filtered.count) logged"
+    }
+
+    /// Opens the right editor for the tapped item based on the current mode.
+    private func open(_ item: Expense) {
+        sheet = mode == .shopping ? .shop(item) : .expense(item)
+    }
+
+    /// Builds a new item pre-filled with the group's category/store, then routes to
+    /// the mode's editor (shopping → to-buy item, expenses → a logged expense).
+    private func addItem(category: String?, store storeName: String?) {
+        if mode == .shopping {
+            var e = Expense(tripID: store.tripID,
+                            category: category?.nilIfBlank ?? ExpenseCategory.other.rawValue,
+                            status: .notPurchased)
+            e.purchasedFrom = storeName
+            sheet = .shop(e)
+        } else {
+            let e = Expense(tripID: store.tripID,
+                            category: category?.nilIfBlank ?? ExpenseCategory.food.rawValue,
+                            spentOn: trip.departDate ?? Date(), status: .purchased,
+                            purchasedFrom: storeName)
+            sheet = .expense(e)
         }
     }
 
@@ -176,8 +254,8 @@ struct ShoppingListView: View {
             Text(group.title).font(.subheadline.weight(.semibold))
             Spacer()
             Button {
-                editing = newItem(tag: grouping == .tag ? group.allItems.first?.tag : nil,
-                                  store: grouping == .store ? group.allItems.first?.purchasedFrom : storeFilter)
+                addItem(category: grouping == .category ? group.title : group.allItems.first?.category,
+                        store: grouping == .store ? group.title : storeFilter)
             } label: {
                 Image(systemName: "plus.circle").font(.subheadline)
             }
@@ -204,7 +282,7 @@ struct ShoppingListView: View {
             Text(sub.title ?? "").font(.caption.weight(.semibold)).textCase(.uppercase).kerning(0.4)
             Spacer()
             Button {
-                editing = newItem(tag: sub.items.first?.tag, store: sub.items.first?.purchasedFrom)
+                addItem(category: sub.items.first?.category, store: sub.items.first?.purchasedFrom)
             } label: {
                 Image(systemName: "plus.circle").font(.caption)
             }
@@ -235,24 +313,17 @@ struct ShoppingListView: View {
         .buttonStyle(.plain)
     }
 
-    private func newItem(tag: String?, store storeName: String?) -> Expense {
-        var e = Expense(tripID: store.tripID, category: ExpenseCategory.merch.rawValue, status: .notPurchased)
-        e.tag = tag
-        e.purchasedFrom = storeName
-        return e
-    }
-
     private func setDimension(_ dim: Grouping, on item: inout Expense, to title: String) {
         switch dim {
-        case .tag:   item.tag = (title == "Other") ? nil : title
-        case .store: item.purchasedFrom = (title == "No store") ? nil : title
+        case .category: item.category = title
+        case .store:    item.purchasedFrom = (title == "No store") ? nil : title
         }
     }
 
     /// Drop onto a primary header — set the primary dimension to match.
     private func moveItems(_ ids: [String], toPrimary group: ShopPrimaryGroup) async {
         for id in ids {
-            guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
+            guard let item = sourceItems.first(where: { $0.id.uuidString == id }) else { continue }
             var updated = item
             setDimension(grouping, on: &updated, to: group.title)
             await store.saveExpense(updated, splits: store.splits(for: updated))
@@ -264,7 +335,7 @@ struct ShoppingListView: View {
     private func moveItems(_ ids: [String], into group: ShopPrimaryGroup, sub: ShopSubGroup) async {
         guard let subDim = activeSub, let sTitle = sub.title else { return }
         for id in ids {
-            guard let item = store.shoppingItems.first(where: { $0.id.uuidString == id }) else { continue }
+            guard let item = sourceItems.first(where: { $0.id.uuidString == id }) else { continue }
             var updated = item
             setDimension(grouping, on: &updated, to: group.title)
             setDimension(subDim, on: &updated, to: sTitle)

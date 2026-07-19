@@ -42,11 +42,20 @@ struct TripMoneyView: View {
     @State private var sheet: ActiveSheet?
     @State private var dropTargetTitle: String?
     @State private var showConverter = false
+    @State private var query = ""
+    // Actual-price prompt: set when checking off a to-buy item that has no price.
+    @State private var pricingItem: Expense?
+    @State private var priceText = ""
+    // Undo toast (move-to-shopping).
+    @State private var toast: MoneyToast?
+    @State private var toastToken = 0
 
     private enum ActiveSheet: Identifiable {
         case shop(Expense), expense(Expense)
         var id: UUID { switch self { case .shop(let e), .expense(let e): return e.id } }
     }
+
+    struct MoneyToast { let message: String; let undo: () -> Void }
 
     /// The items the current mode shows: to-buy list vs. purchased ledger.
     private var sourceItems: [Expense] {
@@ -80,8 +89,18 @@ struct TripMoneyView: View {
     }
 
     private var filtered: [Expense] {
-        guard let f = storeFilter else { return sourceItems }
-        return sourceItems.filter { $0.purchasedFrom?.nilIfBlank == f }
+        var items = sourceItems
+        if let f = storeFilter { items = items.filter { $0.purchasedFrom?.nilIfBlank == f } }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty {
+            items = items.filter {
+                $0.name.localizedCaseInsensitiveContains(q)
+                    || ($0.notes?.localizedCaseInsensitiveContains(q) ?? false)
+                    || ($0.purchasedFrom?.localizedCaseInsensitiveContains(q) ?? false)
+                    || $0.category.localizedCaseInsensitiveContains(q)
+            }
+        }
+        return items
     }
 
     /// Alphabetical, but the catch-all buckets ("Other" / "No store") sort last.
@@ -176,9 +195,7 @@ struct TripMoneyView: View {
                             if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
                             ForEach(sub.items) { item in
                                 PurchaseRow(item: item,
-                                            onToggle: mode == .shopping
-                                                ? { Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } }
-                                                : nil,
+                                            onToggle: mode == .shopping ? { checkOff(item) } : nil,
                                             strikeWhenPurchased: mode == .shopping)
                                     .contentShape(Rectangle())
                                     .onTapGesture { open(item) }
@@ -186,12 +203,19 @@ struct TripMoneyView: View {
                                     .contextMenu {
                                         Button("Edit", systemImage: "pencil") { open(item) }
                                         if mode == .expenses {
-                                            Button("Move to shopping", systemImage: "cart") {
-                                                Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) }
-                                            }
+                                            Button("Move to shopping", systemImage: "cart") { moveToShopping(item) }
                                         }
                                         Button("Delete", systemImage: "trash", role: .destructive) {
                                             Task { await store.deleteExpense(item) }
+                                        }
+                                    }
+                                    .swipeActions(edge: .leading) {
+                                        if mode == .shopping {
+                                            Button { checkOff(item) } label: { Label("Bought", systemImage: "checkmark") }
+                                                .tint(Theme.Colors.brand)
+                                        } else {
+                                            Button { moveToShopping(item) } label: { Label("To shopping", systemImage: "cart") }
+                                                .tint(Theme.Colors.brand)
                                         }
                                     }
                                     .swipeActions(edge: .trailing) {
@@ -208,6 +232,25 @@ struct TripMoneyView: View {
             }
         }
         .listSectionSpacing(.compact)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: mode == .shopping ? "Search items" : "Search expenses")
+        .overlay(alignment: .bottom) { undoToast }
+        .task(id: toastToken) {
+            guard toast != nil else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            withAnimation { toast = nil }
+        }
+        .alert("Actual price", isPresented: Binding(
+            get: { pricingItem != nil }, set: { if !$0 { pricingItem = nil } })) {
+            TextField("Amount (USD)", text: $priceText)
+                #if !targetEnvironment(macCatalyst)
+                .keyboardType(.decimalPad)
+                #endif
+            Button("Save") { confirmPrice(save: true) }
+            Button("Skip", role: .cancel) { confirmPrice(save: false) }
+        } message: {
+            Text("How much did you pay for \(pricingItem?.name ?? "this")?")
+        }
         .navigationTitle("Money")
         #if !targetEnvironment(macCatalyst)
         .navigationBarTitleDisplayMode(.inline)
@@ -254,6 +297,74 @@ struct TripMoneyView: View {
         sheet = mode == .shopping ? .shop(item) : .expense(item)
     }
 
+    // MARK: Row actions
+
+    /// Check a to-buy item off into Expenses. If it has no price yet, ask for the
+    /// actual amount first so the ledger total stays honest.
+    private func checkOff(_ item: Expense) {
+        guard !item.isPurchased else { return }
+        if item.amount == 0 {
+            priceText = ""
+            pricingItem = item
+        } else {
+            Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) }
+        }
+    }
+
+    /// Resolves the actual-price prompt: log with the entered amount, or skip and
+    /// log at $0.
+    private func confirmPrice(save: Bool) {
+        guard let item = pricingItem else { return }
+        pricingItem = nil
+        var updated = item
+        updated.status = .purchased
+        if updated.paidBy == nil { updated.paidBy = family.currentMember?.id }
+        if updated.spentOn == nil { updated.spentOn = Date() }
+        if save { updated.amount = Double(priceText.replacingOccurrences(of: ",", with: "")) ?? 0 }
+        Task { await store.saveExpense(updated, splits: store.splits(for: updated)) }
+    }
+
+    /// Move a logged expense back to the shopping list, with an Undo toast.
+    private func moveToShopping(_ item: Expense) {
+        let restored = item   // was purchased — keep a copy to restore
+        Task { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) }
+        showToast("Moved to shopping") {
+            Task { await store.saveExpense(restored, splits: store.splits(for: restored)) }
+        }
+    }
+
+    private func markAllPurchased(_ group: ShopPrimaryGroup) {
+        let items = group.allItems.filter { !$0.isPurchased }
+        guard !items.isEmpty else { return }
+        Task { for item in items { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } }
+    }
+
+    private func moveAllToShopping(_ group: ShopPrimaryGroup) {
+        let items = group.allItems.filter(\.isPurchased)
+        guard !items.isEmpty else { return }
+        Task { for item in items { await store.togglePurchased(item, defaultPayer: family.currentMember?.id) } }
+    }
+
+    private func showToast(_ message: String, undo: @escaping () -> Void) {
+        withAnimation { toast = MoneyToast(message: message, undo: undo) }
+        toastToken += 1
+    }
+
+    @ViewBuilder private var undoToast: some View {
+        if let t = toast {
+            HStack(spacing: 12) {
+                Text(t.message).font(.subheadline).foregroundStyle(.white)
+                Spacer()
+                Button("Undo") { t.undo(); withAnimation { toast = nil } }
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.brand)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Color.black.opacity(0.85), in: Capsule())
+            .padding(.horizontal, 24).padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     /// Builds a new item pre-filled with the group's category/store, then routes to
     /// the mode's editor (shopping → to-buy item, expenses → a logged expense).
     private func addItem(category: String?, store storeName: String?) {
@@ -298,6 +409,17 @@ struct TripMoneyView: View {
         .background(dropTargetTitle == group.title ? headerColor(group.title).opacity(0.18) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .contextMenu {
+            if mode == .shopping {
+                Button("Mark all purchased", systemImage: "checkmark.circle") { markAllPurchased(group) }
+            } else {
+                Button("Move all to shopping", systemImage: "cart") { moveAllToShopping(group) }
+            }
+            Button("Add to \(group.title)", systemImage: "plus") {
+                addItem(category: grouping == .category ? group.title : group.allItems.first?.category,
+                        store: grouping == .store ? group.title : storeFilter)
+            }
+        }
         .dropDestination(for: String.self) { ids, _ in
             Task { await moveItems(ids, toPrimary: group) }
             return true

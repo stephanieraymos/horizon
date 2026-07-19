@@ -57,6 +57,14 @@ struct ExpenseSummaryView: View {
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
             }
+            if let top = categoryTotals.first, top.total > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: ExpenseCategory.icon(for: top.category)).font(.caption2)
+                    Text("Most on \(top.category)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(TripFormat.money(top.total) ?? "$0").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                }
+            }
 
             if let budget = trip.budget, budget > 0 {
                 let frac = min(store.tripTotal / budget, 1)

@@ -173,24 +173,17 @@ final class TripDetailStore {
         }
     }
 
-    /// Keeps a reservation's cost mirrored into the expense ledger. When `log` is
-    /// on and the reservation has a cost, upserts a linked expense (category from
-    /// type); otherwise removes any existing linked expense. Idempotent via
-    /// `reservation_id`, so editing updates rather than duplicating.
-    func syncReservationExpense(_ r: Reservation, log: Bool, payer: UUID?) async {
-        let existing = expenses.first { $0.reservationID == r.id }
+    /// Shared plumbing for the reservation/activity "mirror expense": upserts the
+    /// linked expense (reusing the existing row so it's idempotent) when `present`,
+    /// else removes it. `configure` fills in the type-specific fields.
+    private func syncLinkedExpense(matching: (Expense) -> Bool, present: Bool,
+                                   configure: (inout Expense) -> Void) async {
+        let existing = expenses.first(where: matching)
         do {
-            if log, let cost = r.costDollars, cost > 0 {
+            if present {
                 var e = existing ?? Expense(tripID: tripID, status: .purchased)
-                e.reservationID = r.id
-                e.category = expenseCategory(for: r.type)
-                e.description = r.title
-                e.amount = cost
                 e.status = .purchased
-                e.spentOn = e.spentOn ?? r.startAt ?? Date()
-                if e.paidBy == nil { e.paidBy = payer }
-                if e.loggedBy == nil { e.loggedBy = payer }
-                if e.purchasedFrom?.nilIfBlank == nil { e.purchasedFrom = r.address?.nilIfBlank }
+                configure(&e)
                 try await supabase.from("fam_trip_expenses").upsert(e).execute()
             } else if let existing {
                 try await supabase.from("fam_trip_expenses").delete().eq("id", value: existing.id).execute()
@@ -199,6 +192,24 @@ final class TripDetailStore {
             }
             await load()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Keeps a reservation's cost mirrored into the expense ledger. When `log` is
+    /// on and the reservation has a cost, upserts a linked expense (category from
+    /// type); otherwise removes any existing linked expense. Idempotent via
+    /// `reservation_id`; the date/place follow the reservation on each edit.
+    func syncReservationExpense(_ r: Reservation, log: Bool, payer: UUID?) async {
+        await syncLinkedExpense(matching: { $0.reservationID == r.id },
+                                present: log && (r.costDollars ?? 0) > 0) { e in
+            e.reservationID = r.id
+            e.category = expenseCategory(for: r.type)
+            e.description = r.title
+            e.amount = r.costDollars ?? 0
+            e.spentOn = r.startAt ?? e.spentOn ?? Date()
+            if e.paidBy == nil { e.paidBy = payer }
+            if e.loggedBy == nil { e.loggedBy = payer }
+            if let addr = r.address?.nilIfBlank { e.purchasedFrom = addr }
+        }
     }
 
     func deleteReservation(_ r: Reservation) async {
@@ -399,27 +410,17 @@ final class TripDetailStore {
     /// Activities). Upserts a linked expense when a cost is set, removes it
     /// otherwise. Idempotent via `activity_id`.
     func syncActivityExpense(_ activity: ItineraryActivity, onDate date: Date, payer: UUID?) async {
-        let existing = expenses.first { $0.activityID == activity.id }
-        do {
-            if let cost = activity.costDollars, cost > 0 {
-                var e = existing ?? Expense(tripID: tripID, status: .purchased)
-                e.activityID = activity.id
-                e.category = ExpenseCategory.activities.rawValue
-                e.description = activity.title
-                e.amount = cost
-                e.status = .purchased
-                e.spentOn = date
-                if e.paidBy == nil { e.paidBy = payer }
-                if e.loggedBy == nil { e.loggedBy = payer }
-                if e.purchasedFrom?.nilIfBlank == nil { e.purchasedFrom = activity.locationName?.nilIfBlank }
-                try await supabase.from("fam_trip_expenses").upsert(e).execute()
-            } else if let existing {
-                try await supabase.from("fam_trip_expenses").delete().eq("id", value: existing.id).execute()
-            } else {
-                return
-            }
-            await load()
-        } catch { errorMessage = error.localizedDescription }
+        await syncLinkedExpense(matching: { $0.activityID == activity.id },
+                                present: (activity.costDollars ?? 0) > 0) { e in
+            e.activityID = activity.id
+            e.category = ExpenseCategory.activities.rawValue
+            e.description = activity.title
+            e.amount = activity.costDollars ?? 0
+            e.spentOn = date
+            if e.paidBy == nil { e.paidBy = payer }
+            if e.loggedBy == nil { e.loggedBy = payer }
+            if let loc = activity.locationName?.nilIfBlank { e.purchasedFrom = loc }
+        }
     }
 
     /// Upserts affected non-empty day rows, deletes emptied ones, then reloads.

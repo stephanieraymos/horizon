@@ -189,6 +189,17 @@ struct TripMoneyView: View {
                         Spacer()
                     }
                 }
+                if primaryGroups.isEmpty {
+                    Section {
+                        if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                            ContentUnavailableView.search(text: query)
+                        } else {
+                            ContentUnavailableView("Nothing here", systemImage: "tray",
+                                description: Text("No items match this filter."))
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                }
                 ForEach(primaryGroups) { group in
                     Section {
                         ForEach(group.subgroups) { sub in
@@ -247,7 +258,8 @@ struct TripMoneyView: View {
                 .keyboardType(.decimalPad)
                 #endif
             Button("Save") { confirmPrice(save: true) }
-            Button("Skip", role: .cancel) { confirmPrice(save: false) }
+            Button("Log without price") { confirmPrice(save: false) }
+            Button("Cancel", role: .cancel) { pricingItem = nil }
         } message: {
             Text("How much did you pay for \(pricingItem?.name ?? "this")?")
         }

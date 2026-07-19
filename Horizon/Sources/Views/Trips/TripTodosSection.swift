@@ -9,13 +9,31 @@ struct TripTodosSection: View {
 
     @State private var showAdd = false
     @State private var editing: TripTodo?
+    @AppStorage("trip.checklist.collapsed") private var collapsed = false
 
     private var remaining: Int { store.todos.filter { !$0.done }.count }
+
+    /// Undone items first (preserving order), checked items sink to the bottom.
+    private var sortedTodos: [TripTodo] {
+        store.todos.enumerated()
+            .sorted { a, b in
+                if a.element.done != b.element.done { return !a.element.done }
+                return a.offset < b.offset
+            }
+            .map(\.element)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Checklist").font(.title3.bold())
+                Button { withAnimation(.snappy) { collapsed.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Text("Checklist").font(.title3.bold())
+                        Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
                 if !store.todos.isEmpty {
                     Text("\(remaining) left")
                         .font(.caption).foregroundStyle(.secondary)
@@ -29,20 +47,22 @@ struct TripTodosSection: View {
                 .tint(Theme.Colors.brand)
             }
 
-            if store.todos.isEmpty {
-                Text("Add pre-trip to-dos — book the rental, renew passports, arrange a sitter.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
-            } else {
-                ForEach(store.todos) { todo in
-                    TodoRow(todo: todo,
-                            onToggle: { Task { await store.toggleTodo(todo) } },
-                            onEdit: { editing = todo })
-                        .contextMenu {
-                            Button("Edit") { editing = todo }
-                            Button("Delete", role: .destructive) { Task { await store.deleteTodo(todo) } }
-                        }
+            if !collapsed {
+                if store.todos.isEmpty {
+                    Text("Add pre-trip to-dos — book the rental, renew passports, arrange a sitter.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    ForEach(sortedTodos) { todo in
+                        TodoRow(todo: todo,
+                                onToggle: { Task { await store.toggleTodo(todo) } },
+                                onEdit: { editing = todo })
+                            .contextMenu {
+                                Button("Edit") { editing = todo }
+                                Button("Delete", role: .destructive) { Task { await store.deleteTodo(todo) } }
+                            }
+                    }
                 }
             }
         }

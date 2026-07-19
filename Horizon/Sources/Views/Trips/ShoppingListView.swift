@@ -156,14 +156,6 @@ struct TripMoneyView: View {
 
     var body: some View {
         List {
-            Section {
-                Picker("Mode", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            .listRowBackground(Color.clear)
-
             if mode == .expenses && !store.purchasedExpenses.isEmpty {
                 Section { ExpenseSummaryView(store: store, trip: trip) }
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -211,6 +203,10 @@ struct TripMoneyView: View {
                                     .contentShape(Rectangle())
                                     .onTapGesture { open(item) }
                                     .draggable(item.id.uuidString)
+                                    .dropDestination(for: String.self) { ids, _ in
+                                        Task { await moveItems(ids, ontoItemLike: item) }
+                                        return true
+                                    }
                                     .contextMenu {
                                         Button("Edit", systemImage: "pencil") { open(item) }
                                         if mode == .expenses {
@@ -243,6 +239,14 @@ struct TripMoneyView: View {
             }
         }
         .listSectionSpacing(.compact)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Mode", selection: $mode) {
+                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal).padding(.top, 6).padding(.bottom, 10)
+            .background(.bar)
+        }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: mode == .shopping ? "Search items" : "Search expenses")
         .overlay(alignment: .bottom) { undoToast }
@@ -484,6 +488,23 @@ struct TripMoneyView: View {
         switch dim {
         case .category: item.category = title
         case .store:    item.purchasedFrom = (title == Self.noWhere) ? nil : title
+        }
+    }
+
+    /// Drop an item's card directly onto another item — it adopts that item's
+    /// bucket(s), so the whole group is a drop target (not just the header).
+    private func moveItems(_ ids: [String], ontoItemLike target: Expense) async {
+        for id in ids where id != target.id.uuidString {
+            guard let item = sourceItems.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            if grouping == .category {
+                updated.category = target.category
+                if activeSub != nil { updated.purchasedFrom = target.purchasedFrom }
+            } else {
+                updated.purchasedFrom = target.purchasedFrom
+                if activeSub != nil { updated.category = target.category }
+            }
+            await store.saveExpense(updated, splits: store.splits(for: updated))
         }
     }
 

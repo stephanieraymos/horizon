@@ -66,6 +66,24 @@ struct PackingListView: View {
         }
     }
 
+    /// Drop an item's card directly onto another item — it adopts that item's
+    /// bucket(s). This makes the whole sub-group a drop target, since the thin
+    /// sub-header alone is fiddly to hit.
+    private func moveItems(_ ids: [String], ontoItemLike target: PackingItem) async {
+        for id in ids where id != target.id.uuidString {
+            guard let item = store.packing.first(where: { $0.id.uuidString == id }) else { continue }
+            var updated = item
+            if grouping == .person {
+                updated.memberID = target.memberID
+                if activeSub != nil { updated.category = target.category }
+            } else {
+                updated.category = target.category
+                if activeSub != nil { updated.memberID = target.memberID }
+            }
+            await store.savePacking(updated)
+        }
+    }
+
     /// Drop onto a sub-header — place the item in BOTH the primary group and the
     /// sub-group it was dropped into (person + category).
     private func moveItems(_ ids: [String], into group: PackPrimaryGroup, sub: PackSubGroup) async {
@@ -149,6 +167,12 @@ struct PackingListView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { editingItem = item }
                                 .draggable(item.id.uuidString)
+                                // The whole row is a drop target too — drop onto any
+                                // item to join its group/sub-group.
+                                .dropDestination(for: String.self) { ids, _ in
+                                    Task { await moveItems(ids, ontoItemLike: item) }
+                                    return true
+                                }
                                 .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
                                         Label("Delete", systemImage: "trash")

@@ -130,6 +130,7 @@ struct ItineraryActivityEditView: View {
     let activity: ItineraryActivity?
     let fromDayID: UUID?
     @Environment(\.dismiss) private var dismiss
+    @Environment(FamilyStore.self) private var family
 
     @State private var title: String
     @State private var date: Date
@@ -137,6 +138,7 @@ struct ItineraryActivityEditView: View {
     @State private var time: Date
     @State private var location: String
     @State private var notes: String
+    @State private var costText: String
 
     init(store: TripDetailStore, activity: ItineraryActivity?, fromDayID: UUID?, initialDate: Date) {
         self.store = store; self.activity = activity; self.fromDayID = fromDayID
@@ -150,6 +152,7 @@ struct ItineraryActivityEditView: View {
         _time = State(initialValue: parsed ?? nine)
         _location = State(initialValue: activity?.locationName ?? "")
         _notes = State(initialValue: activity?.notes ?? "")
+        _costText = State(initialValue: activity?.costCents.map { String(format: "%.2f", Double($0) / 100) } ?? "")
     }
 
     var body: some View {
@@ -166,6 +169,16 @@ struct ItineraryActivityEditView: View {
                 Section {
                     TextField("Location (optional)", text: $location)
                     TextField("Notes (optional)", text: $notes, axis: .vertical).lineLimit(1...4)
+                }
+                Section {
+                    TextField("Cost (USD, optional)", text: $costText)
+                        #if !targetEnvironment(macCatalyst)
+                        .keyboardType(.decimalPad)
+                        #endif
+                } footer: {
+                    if !costText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Adds this to the trip's Money ledger as an Activities expense.")
+                    }
                 }
                 if activity != nil, let dayID = fromDayID, let existing = activity {
                     Section {
@@ -188,7 +201,8 @@ struct ItineraryActivityEditView: View {
     }
 
     private func save() async {
-        let updated = ItineraryActivity(
+        let cents = Double(costText.replacingOccurrences(of: ",", with: "")).map { Int(($0 * 100).rounded()) }
+        var updated = ItineraryActivity(
             id: activity?.id ?? UUID(),
             time: hasTime ? ItineraryTime.format(time) : nil,
             title: title.trimmingCharacters(in: .whitespaces),
@@ -198,7 +212,9 @@ struct ItineraryActivityEditView: View {
             done: activity?.done,
             reservationID: activity?.reservationID,
             sort: activity?.sort)
+        updated.costCents = cents
         await store.upsertActivity(updated, onDate: date, fromDayID: fromDayID)
+        await store.syncActivityExpense(updated, onDate: date, payer: family.currentMember?.id)
         dismiss()
     }
 }

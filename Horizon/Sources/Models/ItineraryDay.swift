@@ -18,6 +18,11 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
     /// Manual display order within its day. nil = "auto" (order by time); set once
     /// the user drags to reorder. Additive JSON key.
     var sort: Int?
+    /// Optional cost for this activity (cents). When set, it's mirrored into the
+    /// Money ledger as an expense. Additive JSON key.
+    var costCents: Int?
+
+    var costDollars: Double? { costCents.map { Double($0) / 100 } }
 
     enum CodingKeys: String, CodingKey {
         case id, time, title
@@ -26,6 +31,7 @@ struct ItineraryActivity: Codable, Hashable, Identifiable {
         case notes, done
         case reservationID = "reservation_id"
         case sort
+        case costCents = "cost_cents"
     }
 }
 

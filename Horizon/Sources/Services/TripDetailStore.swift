@@ -386,9 +386,40 @@ final class TripDetailStore {
 
     func deleteActivity(id: UUID, fromDayID: UUID) async {
         guard let i = itinerary.firstIndex(where: { $0.id == fromDayID }) else { return }
+        // Remove any expense mirrored from this activity's cost.
+        if let linked = expenses.first(where: { $0.activityID == id }) {
+            try? await supabase.from("fam_trip_expenses").delete().eq("id", value: linked.id).execute()
+        }
         var days = itinerary
         days[i].activities.removeAll { $0.id == id }
         await persist(days: days, affected: [days[i].id])
+    }
+
+    /// Mirrors an itinerary activity's cost into the expense ledger (category
+    /// Activities). Upserts a linked expense when a cost is set, removes it
+    /// otherwise. Idempotent via `activity_id`.
+    func syncActivityExpense(_ activity: ItineraryActivity, onDate date: Date, payer: UUID?) async {
+        let existing = expenses.first { $0.activityID == activity.id }
+        do {
+            if let cost = activity.costDollars, cost > 0 {
+                var e = existing ?? Expense(tripID: tripID, status: .purchased)
+                e.activityID = activity.id
+                e.category = ExpenseCategory.activities.rawValue
+                e.description = activity.title
+                e.amount = cost
+                e.status = .purchased
+                e.spentOn = date
+                if e.paidBy == nil { e.paidBy = payer }
+                if e.loggedBy == nil { e.loggedBy = payer }
+                if e.purchasedFrom?.nilIfBlank == nil { e.purchasedFrom = activity.locationName?.nilIfBlank }
+                try await supabase.from("fam_trip_expenses").upsert(e).execute()
+            } else if let existing {
+                try await supabase.from("fam_trip_expenses").delete().eq("id", value: existing.id).execute()
+            } else {
+                return
+            }
+            await load()
+        } catch { errorMessage = error.localizedDescription }
     }
 
     /// Upserts affected non-empty day rows, deletes emptied ones, then reloads.

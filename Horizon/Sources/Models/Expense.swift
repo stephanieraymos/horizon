@@ -48,6 +48,9 @@ struct Expense: Codable, Identifiable, Hashable {
     /// Set when this expense was auto-created from a reservation's cost; keeps the
     /// two in sync and cascade-deletes with the reservation.
     var reservationID: UUID?
+    /// Set when this expense mirrors an itinerary activity's cost; keeps the two
+    /// in sync (activities live in a JSON blob, so no DB FK).
+    var activityID: UUID?
 
     /// Item name (shopping) / description (expense) — same column.
     var name: String { description ?? "" }
@@ -67,18 +70,21 @@ struct Expense: Codable, Identifiable, Hashable {
         case status, tag, link, notes
         case purchasedFrom = "purchased_from"
         case reservationID = "reservation_id"
+        case activityID = "activity_id"
     }
 
     init(id: UUID = UUID(), tripID: UUID, category: String = ExpenseCategory.food.rawValue,
          description: String? = nil, amount: Double = 0, loggedBy: UUID? = nil,
          paidBy: UUID? = nil, spentOn: Date? = nil, placeID: UUID? = nil,
          status: PurchaseStatus = .purchased, tag: String? = nil, link: String? = nil,
-         purchasedFrom: String? = nil, notes: String? = nil, reservationID: UUID? = nil) {
+         purchasedFrom: String? = nil, notes: String? = nil, reservationID: UUID? = nil,
+         activityID: UUID? = nil) {
         self.id = id; self.tripID = tripID; self.category = category
         self.description = description; self.amount = amount; self.loggedBy = loggedBy
         self.paidBy = paidBy; self.spentOn = spentOn; self.placeID = placeID
         self.status = status; self.tag = tag; self.link = link
         self.purchasedFrom = purchasedFrom; self.notes = notes; self.reservationID = reservationID
+        self.activityID = activityID
     }
 
     init(from decoder: Decoder) throws {
@@ -99,6 +105,7 @@ struct Expense: Codable, Identifiable, Hashable {
         purchasedFrom = try c.decodeIfPresent(String.self, forKey: .purchasedFrom)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         reservationID = try c.decodeIfPresent(UUID.self, forKey: .reservationID)
+        activityID = try c.decodeIfPresent(UUID.self, forKey: .activityID)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -118,6 +125,7 @@ struct Expense: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(purchasedFrom, forKey: .purchasedFrom)
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(reservationID, forKey: .reservationID)
+        try c.encodeIfPresent(activityID, forKey: .activityID)
     }
 }
 

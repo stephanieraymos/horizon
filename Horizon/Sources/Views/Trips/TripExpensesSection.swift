@@ -156,6 +156,10 @@ struct ExpenseEditView: View {
     private var total: Double { Double(amountText.replacingOccurrences(of: ",", with: "")) ?? 0 }
     private var splitSum: Double { involved.reduce(0) { $0 + (Double(shares[$1] ?? "") ?? 0) } }
     private var remaining: Double { total - splitSum }
+    /// Already saved? Existing expenses (which can legitimately be $0 — e.g. a
+    /// checked-off item logged without a price) stay editable regardless of amount;
+    /// only a brand-new entry needs an amount.
+    private var isExisting: Bool { store.expenses.contains { $0.id == draft.id } }
 
     var body: some View {
         NavigationStack {
@@ -237,7 +241,7 @@ struct ExpenseEditView: View {
                         ProgressView()
                     } else {
                         Button("Save") { isSaving = true; Task { await save() } }
-                            .disabled(total <= 0)
+                            .disabled(!isExisting && total <= 0)
                     }
                 }
             }

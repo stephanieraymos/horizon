@@ -252,6 +252,9 @@ struct ExpenseEditView: View {
         draft.category = category
         draft.spentOn = spentOn
         draft.purchasedFrom = whereText.nilIfBlank
+        // "Where" (purchased_from) is now the source of truth; drop the legacy
+        // fam_places link so it can't drift out of sync with the visible value.
+        draft.placeID = nil
         // Persist a brand-new vendor to the shared list so it's reusable.
         if let name = whereText.nilIfBlank, trips.store(named: name) == nil, let fid = family.familyID {
             await trips.createShoppingStore(familyID: fid, name: name)

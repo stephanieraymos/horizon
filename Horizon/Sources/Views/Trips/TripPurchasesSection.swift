@@ -81,6 +81,7 @@ struct PurchaseRow: View {
                 Button(action: onToggle) {
                     Image(systemName: item.status.systemImage)
                         .foregroundStyle(item.status == .purchased ? Theme.Colors.brand : .secondary)
+                        .frame(width: 20)
                 }
                 .buttonStyle(.plain)
             } else {

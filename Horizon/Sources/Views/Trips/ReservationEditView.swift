@@ -14,6 +14,8 @@ struct ReservationEditView: View {
     @State private var endAt: Date
     @State private var costText: String
     @State private var typeText: String
+    @State private var logExpense = false
+    @State private var didInitLog = false
     @State private var pasteText: String = ""
     @State private var searchingLocation = false
     @State private var screenshotItems: [PhotosPickerItem] = []
@@ -100,12 +102,21 @@ struct ReservationEditView: View {
                     }
                 }
 
-                Section("Cost & notes") {
+                Section {
                     TextField("Cost (USD)", text: $costText)
                         #if !targetEnvironment(macCatalyst)
                         .keyboardType(.decimalPad)
                         #endif
+                    if !costText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Toggle("Log as trip expense", isOn: $logExpense)
+                    }
                     TextField("Notes", text: bind(\.notes), axis: .vertical)
+                } header: {
+                    Text("Cost & notes")
+                } footer: {
+                    if !costText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Adds this cost to the trip's Money ledger as a \(draft.type.label) expense.")
+                    }
                 }
 
                 Section {
@@ -137,6 +148,15 @@ struct ReservationEditView: View {
                 }
             }
             .navigationTitle(draft.title.isEmpty ? "New \(draft.type.label)" : "Edit")
+            .onAppear {
+                guard !didInitLog else { return }
+                // Reflect an existing linked expense; for a brand-new booking with a
+                // cost, default the toggle on.
+                let hasLinked = detail.expenses.contains { $0.reservationID == draft.id }
+                let isExisting = detail.reservations.contains { $0.id == draft.id }
+                logExpense = hasLinked || (!isExisting && (draft.costCents ?? 0) > 0)
+                didInitLog = true
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -221,6 +241,7 @@ struct ReservationEditView: View {
         let cents = Double(costText.replacingOccurrences(of: ",", with: "")).map { Int(($0 * 100).rounded()) }
         draft.costCents = cents
         await detail.saveReservation(draft)
+        await detail.syncReservationExpense(draft, log: logExpense, payer: family.currentMember?.id)
         dismiss()
     }
 }

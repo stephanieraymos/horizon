@@ -161,6 +161,46 @@ final class TripDetailStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// The expense category that best matches a reservation type.
+    private func expenseCategory(for type: ReservationType) -> String {
+        switch type {
+        case .flight:                       return ExpenseCategory.flights.rawValue
+        case .lodging:                      return ExpenseCategory.lodging.rawValue
+        case .car, .rail, .ferry:           return ExpenseCategory.transport.rawValue
+        case .dining:                       return ExpenseCategory.food.rawValue
+        case .activity, .themepark, .event: return ExpenseCategory.activities.rawValue
+        case .other:                        return ExpenseCategory.other.rawValue
+        }
+    }
+
+    /// Keeps a reservation's cost mirrored into the expense ledger. When `log` is
+    /// on and the reservation has a cost, upserts a linked expense (category from
+    /// type); otherwise removes any existing linked expense. Idempotent via
+    /// `reservation_id`, so editing updates rather than duplicating.
+    func syncReservationExpense(_ r: Reservation, log: Bool, payer: UUID?) async {
+        let existing = expenses.first { $0.reservationID == r.id }
+        do {
+            if log, let cost = r.costDollars, cost > 0 {
+                var e = existing ?? Expense(tripID: tripID, status: .purchased)
+                e.reservationID = r.id
+                e.category = expenseCategory(for: r.type)
+                e.description = r.title
+                e.amount = cost
+                e.status = .purchased
+                e.spentOn = e.spentOn ?? r.startAt ?? Date()
+                if e.paidBy == nil { e.paidBy = payer }
+                if e.loggedBy == nil { e.loggedBy = payer }
+                if e.purchasedFrom?.nilIfBlank == nil { e.purchasedFrom = r.address?.nilIfBlank }
+                try await supabase.from("fam_trip_expenses").upsert(e).execute()
+            } else if let existing {
+                try await supabase.from("fam_trip_expenses").delete().eq("id", value: existing.id).execute()
+            } else {
+                return   // nothing to do
+            }
+            await load()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func deleteReservation(_ r: Reservation) async {
         do {
             try await supabase.from("fam_reservations").delete().eq("id", value: r.id).execute()

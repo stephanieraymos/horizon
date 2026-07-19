@@ -9,7 +9,14 @@ struct TripTodosSection: View {
 
     @State private var showAdd = false
     @State private var editing: TripTodo?
-    @AppStorage("trip.checklist.collapsed") private var collapsed = false
+    // Per-trip so collapsing one trip's checklist doesn't collapse them all.
+    @AppStorage private var collapsed: Bool
+
+    init(store: TripDetailStore, familyID: UUID) {
+        self.store = store
+        self.familyID = familyID
+        _collapsed = AppStorage(wrappedValue: false, "trip.checklist.collapsed.\(store.tripID.uuidString)")
+    }
 
     private var remaining: Int { store.todos.filter { !$0.done }.count }
 

@@ -504,6 +504,8 @@ struct TripMoneyView: View {
                 updated.purchasedFrom = target.purchasedFrom
                 if activeSub != nil { updated.category = target.category }
             }
+            // Skip a no-op drop (onto a sibling already in the same bucket).
+            guard updated.category != item.category || updated.purchasedFrom != item.purchasedFrom else { continue }
             await store.saveExpense(updated, splits: store.splits(for: updated))
         }
     }

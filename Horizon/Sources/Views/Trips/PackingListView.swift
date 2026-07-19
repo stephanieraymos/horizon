@@ -80,6 +80,8 @@ struct PackingListView: View {
                 updated.category = target.category
                 if activeSub != nil { updated.memberID = target.memberID }
             }
+            // Skip a no-op drop (onto a sibling already in the same bucket).
+            guard updated.memberID != item.memberID || updated.category != item.category else { continue }
             await store.savePacking(updated)
         }
     }

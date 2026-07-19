@@ -33,9 +33,8 @@ struct TripMoneyView: View {
     /// Catch-all bucket label for items with no "where" set.
     private static let noWhere = "No location"
 
-    @State private var mode: Mode = .shopping
-    // Persisted so the grouping choice survives relaunches (as the old inline
-    // shopping view did).
+    // Persisted so Shopping/Expenses + the grouping choice survive relaunches.
+    @AppStorage("money.mode") private var mode: Mode = .shopping
     @AppStorage("shopping.groupByStore") private var groupByStore = false
     @AppStorage("shopping.subGroupOn") private var subGroupOn = true
     private var grouping: Grouping { groupByStore ? .store : .category }
@@ -92,6 +91,15 @@ struct TripMoneyView: View {
         return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
     }
 
+    /// Expenses read best newest-first (a ledger); the shopping list reads best
+    /// alphabetically (scan while you shop).
+    private func sortedItems(_ items: [Expense]) -> [Expense] {
+        if mode == .expenses {
+            return items.sorted { ($0.spentOn ?? $0.loggedAt ?? .distantPast) > ($1.spentOn ?? $1.loggedAt ?? .distantPast) }
+        }
+        return items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     private var primaryGroups: [ShopPrimaryGroup] {
         Dictionary(grouping: filtered, by: { title(for: grouping, item: $0) })
             .map { pTitle, pItems -> ShopPrimaryGroup in
@@ -99,18 +107,19 @@ struct TripMoneyView: View {
                 if let sub = activeSub {
                     subgroups = Dictionary(grouping: pItems, by: { title(for: sub, item: $0) })
                         .map { sTitle, sItems in
-                            ShopSubGroup(title: sTitle, icon: icon(for: sub),
-                                         items: sItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
+                            ShopSubGroup(title: sTitle, icon: icon(for: sub), items: sortedItems(sItems))
                         }
                         .sorted { catchAllLast($0.title ?? "", $1.title ?? "") }
                 } else {
-                    subgroups = [ShopSubGroup(title: nil, icon: nil,
-                                              items: pItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })]
+                    subgroups = [ShopSubGroup(title: nil, icon: nil, items: sortedItems(pItems))]
                 }
                 return ShopPrimaryGroup(title: pTitle, icon: icon(for: grouping), subgroups: subgroups)
             }
             .sorted { catchAllLast($0.title, $1.title) }
     }
+
+    /// Sum of a group's item amounts — shown in headers in Expenses mode.
+    private func groupTotal(_ items: [Expense]) -> Double { items.reduce(0) { $0 + $1.amount } }
 
     private static let headerPalette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .green, .teal, .brown]
     private func headerColor(_ title: String) -> Color {
@@ -268,7 +277,11 @@ struct TripMoneyView: View {
         HStack(spacing: 6) {
             Image(systemName: group.icon).font(.footnote)
             Text(group.title).font(.subheadline.weight(.semibold))
+            Text("· \(group.allItems.count)").font(.caption).opacity(0.7)
             Spacer()
+            if mode == .expenses, let total = TripFormat.money(groupTotal(group.allItems)) {
+                Text(total).font(.subheadline.weight(.semibold))
+            }
             Button {
                 addItem(category: grouping == .category ? group.title : group.allItems.first?.category,
                         store: grouping == .store ? group.title : storeFilter)
@@ -296,7 +309,11 @@ struct TripMoneyView: View {
         return HStack(spacing: 6) {
             if let icon = sub.icon { Image(systemName: icon).font(.caption2) }
             Text(sub.title ?? "").font(.caption.weight(.semibold)).textCase(.uppercase).kerning(0.4)
+            Text("· \(sub.items.count)").font(.caption2).opacity(0.7)
             Spacer()
+            if mode == .expenses, let total = TripFormat.money(groupTotal(sub.items)) {
+                Text(total).font(.caption.weight(.semibold))
+            }
             Button {
                 addItem(category: sub.items.first?.category, store: sub.items.first?.purchasedFrom)
             } label: {

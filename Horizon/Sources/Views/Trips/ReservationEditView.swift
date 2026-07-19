@@ -16,6 +16,7 @@ struct ReservationEditView: View {
     @State private var typeText: String
     @State private var logExpense = false
     @State private var didInitLog = false
+    @State private var isSaving = false
     @State private var pasteText: String = ""
     @State private var searchingLocation = false
     @State private var screenshotItems: [PhotosPickerItem] = []
@@ -160,10 +161,15 @@ struct ReservationEditView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { isSaving = true; Task { await save() } }
+                            .disabled(draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .sheet(isPresented: $searchingLocation) {
                 LocationSearchSheet { result in
                     draft.address = result.address.nilIfBlank

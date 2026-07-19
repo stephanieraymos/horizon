@@ -66,6 +66,25 @@ struct PackingListView: View {
         }
     }
 
+    /// Categories offered by the "Move to category" menu — every managed category
+    /// plus any already in use, with "Other" available as the catch-all.
+    private var categoryMoveChoices: [String] {
+        var seen = Set<String>(); var out: [String] = []
+        for c in trips.packingCategories.map(\.name) + categoriesPresent + ["Other"]
+        where seen.insert(c.lowercased()).inserted { out.append(c) }
+        return out.sorted { subGroupBefore($0, $1) }
+    }
+
+    private func setCategory(_ item: PackingItem, _ c: String) async {
+        var u = item; u.category = (c == "Other") ? nil : c
+        await store.savePacking(u)
+    }
+
+    private func setPerson(_ item: PackingItem, _ id: UUID?) async {
+        var u = item; u.memberID = id
+        await store.savePacking(u)
+    }
+
     /// Drop an item's card directly onto another item — it adopts that item's
     /// bucket(s). This makes the whole sub-group a drop target, since the thin
     /// sub-header alone is fiddly to hit.
@@ -174,6 +193,31 @@ struct PackingListView: View {
                                 .dropDestination(for: String.self) { ids, _ in
                                     Task { await moveItems(ids, ontoItemLike: item) }
                                     return true
+                                }
+                                // Reliable reassignment (drag-and-drop in a List is
+                                // flaky): long-press → move to a category or person.
+                                .contextMenu {
+                                    Menu("Move to category") {
+                                        ForEach(categoryMoveChoices, id: \.self) { c in
+                                            Button { Task { await setCategory(item, c) } } label: {
+                                                Label(c, systemImage: (item.category?.nilIfBlank ?? "Other") == c ? "checkmark" : trips.icon(forCategory: c))
+                                            }
+                                        }
+                                    }
+                                    Menu("Move to person") {
+                                        Button { Task { await setPerson(item, nil) } } label: {
+                                            Label("Everyone", systemImage: item.memberID == nil ? "checkmark" : "person.2")
+                                        }
+                                        ForEach(travelerMembers) { m in
+                                            Button { Task { await setPerson(item, m.id) } } label: {
+                                                Label(m.name, systemImage: item.memberID == m.id ? "checkmark" : "person")
+                                            }
+                                        }
+                                    }
+                                    Button("Edit", systemImage: "pencil") { editingItem = item }
+                                    Button("Delete", systemImage: "trash", role: .destructive) {
+                                        Task { await store.deletePacking(item) }
+                                    }
                                 }
                                 .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
@@ -454,6 +498,7 @@ struct PackingItemEditView: View {
     @State private var categoryText = ""
     @State private var pendingIcon = "shippingbox"
     @State private var showIconPicker = false
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -476,10 +521,15 @@ struct PackingItemEditView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(item.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { isSaving = true; Task { await save() } }
+                            .disabled(item.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .onAppear {
                 if let e = existing {
                     memberID = e.memberID; item = e.item; categoryText = e.category ?? ""

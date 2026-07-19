@@ -127,6 +127,7 @@ struct ExpenseEditView: View {
     @State private var whereText: String
     @State private var involved: Set<UUID>
     @State private var shares: [UUID: String]
+    @State private var isSaving = false
 
     let travelerNames: [String]
 
@@ -228,11 +229,16 @@ struct ExpenseEditView: View {
                 // Default the payer to the current member (usually the payer).
                 if draft.paidBy == nil { draft.paidBy = family.currentMember?.id }
             }
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(total <= 0)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { isSaving = true; Task { await save() } }
+                            .disabled(total <= 0)
+                    }
                 }
             }
         }

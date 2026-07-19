@@ -40,7 +40,11 @@ struct TripsListView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if trips.trips.isEmpty && !trips.isLoading {
+                if !trips.hasLoaded {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if trips.trips.isEmpty {
                     ContentUnavailableView {
                         Label("No trips yet", systemImage: "airplane")
                     } description: {

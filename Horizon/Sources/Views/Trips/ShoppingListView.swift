@@ -209,6 +209,23 @@ struct TripMoneyView: View {
                                     }
                                     .contextMenu {
                                         Button("Edit", systemImage: "pencil") { open(item) }
+                                        Menu("Move to category") {
+                                            ForEach(categoryOptions, id: \.self) { c in
+                                                Button { Task { await setItemCategory(item, c) } } label: {
+                                                    Label(c, systemImage: item.category == c ? "checkmark" : ExpenseCategory.icon(for: c))
+                                                }
+                                            }
+                                        }
+                                        Menu("Move to where") {
+                                            Button { Task { await setItemWhere(item, nil) } } label: {
+                                                Label(Self.noWhere, systemImage: item.purchasedFrom?.nilIfBlank == nil ? "checkmark" : "mappin.slash")
+                                            }
+                                            ForEach(trips.shoppingStores) { s in
+                                                Button { Task { await setItemWhere(item, s.name) } } label: {
+                                                    Label(s.name, systemImage: item.purchasedFrom == s.name ? "checkmark" : "mappin.and.ellipse")
+                                                }
+                                            }
+                                        }
                                         if mode == .expenses {
                                             Button("Move to shopping", systemImage: "cart") { moveToShopping(item) }
                                         }
@@ -489,6 +506,16 @@ struct TripMoneyView: View {
         case .category: item.category = title
         case .store:    item.purchasedFrom = (title == Self.noWhere) ? nil : title
         }
+    }
+
+    private func setItemCategory(_ item: Expense, _ c: String) async {
+        var u = item; u.category = c
+        await store.saveExpense(u, splits: store.splits(for: u))
+    }
+
+    private func setItemWhere(_ item: Expense, _ w: String?) async {
+        var u = item; u.purchasedFrom = w
+        await store.saveExpense(u, splits: store.splits(for: u))
     }
 
     /// Drop an item's card directly onto another item — it adopts that item's

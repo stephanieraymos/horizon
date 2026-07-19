@@ -13,44 +13,45 @@ final class TripsStore {
     var packingCategories: [PackingCategoryItem] = []
     var shoppingStores: [ShoppingStore] = []
     var isLoading = false
+    /// False until the first load finishes — lets views show a spinner instead of
+    /// an empty ("No trips yet") state before data has arrived.
+    var hasLoaded = false
     var errorMessage: String?
 
     // MARK: Load
 
     func load() async {
         isLoading = true
-        defer { isLoading = false }
+        defer { isLoading = false; hasLoaded = true }
+        // Independent tables — fetch concurrently instead of one-after-another.
+        async let tripsR = fetchTrips()
+        async let destinationsR: [Destination]? = fetchList("fam_destinations", order: "name")
+        async let placesR: [Place]? = fetchList("fam_places", order: "name")
+        async let categoriesR: [PackingCategoryItem]? = fetchList("fam_packing_categories", order: "sort")
+        async let storesR: [ShoppingStore]? = fetchList("fam_shopping_stores", order: "name")
+        // Assign only on success so a transient error (e.g. pull-to-refresh
+        // offline) doesn't wipe already-loaded data.
+        let (t, tErr) = await tripsR
+        if let tErr { errorMessage = tErr } else if let t { trips = t }
+        if let d = await destinationsR { destinations = d }
+        if let p = await placesR { places = p }
+        if let c = await categoriesR { packingCategories = c }
+        if let s = await storesR { shoppingStores = s }
+    }
+
+    /// Trips ordered by depart date; surfaces its error (the primary table).
+    private func fetchTrips() async -> ([Trip]?, String?) {
         do {
-            trips = try await supabase
-                .from("fam_trips")
-                .select()
-                .order("depart_date", ascending: true, nullsFirst: false)
-                .execute()
-                .value
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        do {
-            destinations = try await supabase
-                .from("fam_destinations")
-                .select()
-                .order("name")
-                .execute()
-                .value
-        } catch {
-            // Non-fatal — destinations are supplementary.
-        }
-        do {
-            places = try await supabase.from("fam_places").select().order("name").execute().value
-        } catch { /* non-fatal */ }
-        do {
-            packingCategories = try await supabase.from("fam_packing_categories")
-                .select().order("sort").execute().value
-        } catch { /* non-fatal */ }
-        do {
-            shoppingStores = try await supabase.from("fam_shopping_stores")
-                .select().order("name").execute().value
-        } catch { /* non-fatal */ }
+            let rows: [Trip] = try await supabase.from("fam_trips").select()
+                .order("depart_date", ascending: true, nullsFirst: false).execute().value
+            return (rows, nil)
+        } catch { return (nil, error.localizedDescription) }
+    }
+
+    /// A supplementary table — errors are non-fatal (nil keeps existing data).
+    private func fetchList<T: Decodable>(_ table: String, order: String) async -> [T]? {
+        do { return try await supabase.from(table).select().order(order).execute().value }
+        catch { return nil }
     }
 
     func savePlace(_ place: Place) async {

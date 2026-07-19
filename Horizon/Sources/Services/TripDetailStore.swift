@@ -24,18 +24,24 @@ final class TripDetailStore {
     func load() async {
         isLoading = true
         defer { isLoading = false }
+        // All independent fetches run concurrently; only splits depends on the
+        // loaded expenses (needs their ids), so it's awaited after.
         async let res = fetchReservations()
         async let days = fetchItinerary()
         async let pack = fetchPacking()
         async let exp = fetchExpenses()
+        async let docs = fetchDocuments()
+        async let td = fetchTodos()
+        async let tp = fetchTripPlaces()
         reservations = await res
         itinerary = await days
         packing = await pack
-        expenses = await exp
-        splits = await fetchSplits(for: expenses.map(\.id))
-        documents = await fetchDocuments()
-        todos = await fetchTodos()
-        tripPlaces = await fetchTripPlaces()
+        let loadedExpenses = await exp
+        expenses = loadedExpenses
+        documents = await docs
+        todos = await td
+        tripPlaces = await tp
+        splits = await fetchSplits(for: loadedExpenses.map(\.id))
     }
 
     // MARK: Trip places (multiple destinations)
@@ -446,7 +452,10 @@ final class TripDetailStore {
     func savePacking(_ item: PackingItem) async {
         do {
             try await supabase.from("fam_trip_packing").upsert(item).execute()
-            await load()
+            // Optimistic local update — no full trip reload (that took seconds and
+            // left the save sheet hanging, inviting duplicate taps).
+            if let i = packing.firstIndex(where: { $0.id == item.id }) { packing[i] = item }
+            else { packing.append(item) }
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -519,7 +528,11 @@ final class TripDetailStore {
             if !newSplits.isEmpty {
                 try await supabase.from("fam_expense_splits").insert(newSplits).execute()
             }
-            await load()
+            // Optimistic local update instead of a full trip reload.
+            if let i = expenses.firstIndex(where: { $0.id == expense.id }) { expenses[i] = expense }
+            else { expenses.append(expense) }
+            splits.removeAll { $0.expenseID == expense.id }
+            splits.append(contentsOf: newSplits)
         } catch { errorMessage = error.localizedDescription }
     }
 

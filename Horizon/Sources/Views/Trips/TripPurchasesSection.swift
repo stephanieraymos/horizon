@@ -137,6 +137,7 @@ struct PurchaseEditView: View {
     @State private var amountText: String
     @State private var categoryText: String
     @State private var storeText: String
+    @State private var isSaving = false
     /// Shared category vocabulary (same values Expenses use), so a checked-off
     /// item logs under the category it was filed in — no more everything → Merch.
     let categoryOptions: [String]
@@ -200,11 +201,16 @@ struct PurchaseEditView: View {
                 }
             }
             .navigationTitle((draft.description ?? "").isEmpty ? "New Item" : "Edit Item")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled((draft.description ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { isSaving = true; Task { await save() } }
+                            .disabled((draft.description ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
         }

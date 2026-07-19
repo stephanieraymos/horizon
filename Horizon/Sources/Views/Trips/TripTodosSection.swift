@@ -20,14 +20,16 @@ struct TripTodosSection: View {
 
     private var remaining: Int { store.todos.filter { !$0.done }.count }
 
-    /// Undone items first (preserving order), checked items sink to the bottom.
+    /// Undone items first, each block sorted by due date ascending (undated last);
+    /// checked items sink to the bottom.
     private var sortedTodos: [TripTodo] {
-        store.todos.enumerated()
-            .sorted { a, b in
-                if a.element.done != b.element.done { return !a.element.done }
-                return a.offset < b.offset
-            }
-            .map(\.element)
+        store.todos.sorted { a, b in
+            if a.done != b.done { return !a.done }
+            let da = a.dueDate ?? .distantFuture
+            let db = b.dueDate ?? .distantFuture
+            if da != db { return da < db }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
     }
 
     var body: some View {
@@ -142,6 +144,7 @@ private struct TodoAddView: View {
     @State private var title: String
     @State private var hasDue: Bool
     @State private var due: Date
+    @State private var isSaving = false
 
     init(store: TripDetailStore, familyID: UUID, existing: TripTodo?) {
         self.store = store; self.familyID = familyID; self.existing = existing
@@ -166,18 +169,23 @@ private struct TodoAddView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(existing == nil ? "Add" : "Save") {
-                        // Preserve done/sort/createdBy when editing; upsert by id.
-                        let todo = TripTodo(id: existing?.id ?? UUID(),
-                                            tripID: store.tripID, familyID: familyID,
-                                            title: title.trimmingCharacters(in: .whitespaces),
-                                            done: existing?.done ?? false,
-                                            dueDate: hasDue ? due : nil,
-                                            sort: existing?.sort ?? store.todos.count,
-                                            createdBy: existing?.createdBy ?? family.currentMember?.userID)
-                        Task { await store.saveTodo(todo); dismiss() }
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button(existing == nil ? "Add" : "Save") {
+                            isSaving = true
+                            // Preserve done/sort/createdBy when editing; upsert by id.
+                            let todo = TripTodo(id: existing?.id ?? UUID(),
+                                                tripID: store.tripID, familyID: familyID,
+                                                title: title.trimmingCharacters(in: .whitespaces),
+                                                done: existing?.done ?? false,
+                                                dueDate: hasDue ? due : nil,
+                                                sort: existing?.sort ?? store.todos.count,
+                                                createdBy: existing?.createdBy ?? family.currentMember?.userID)
+                            Task { await store.saveTodo(todo); dismiss() }
+                        }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }

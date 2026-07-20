@@ -151,11 +151,12 @@ struct ReservationEditView: View {
             .navigationTitle(draft.title.isEmpty ? "New \(draft.type.label)" : "Edit")
             .onAppear {
                 guard !didInitLog else { return }
-                // Reflect an existing linked expense; for a brand-new booking with a
-                // cost, default the toggle on.
+                // Any reservation with a cost logs to the trip's Money by default
+                // (hotels, campsites, event tickets…), so it's represented in spend
+                // without the user remembering to flip a switch. They can still turn
+                // it off per reservation.
                 let hasLinked = detail.expenses.contains { $0.reservationID == draft.id }
-                let isExisting = detail.reservations.contains { $0.id == draft.id }
-                logExpense = hasLinked || (!isExisting && (draft.costCents ?? 0) > 0)
+                logExpense = hasLinked || (draft.costCents ?? 0) > 0
                 didInitLog = true
             }
             .toolbar {

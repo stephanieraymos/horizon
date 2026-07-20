@@ -49,6 +49,16 @@ struct TripMoneyView: View {
     // Undo toast (move-to-shopping).
     @State private var toast: MoneyToast?
     @State private var toastToken = 0
+    // Per-trip: the Shopping list's collapsed "Bought" section (checked-off items).
+    @AppStorage private var boughtExpanded: Bool
+
+    init(store: TripDetailStore, trip: Trip, familyID: UUID) {
+        self.store = store
+        self.trip = trip
+        self.familyID = familyID
+        _boughtExpanded = AppStorage(wrappedValue: false,
+                                     "shopping.boughtExpanded.\(store.tripID.uuidString)")
+    }
 
     private enum ActiveSheet: Identifiable {
         case shop(Expense), expense(Expense)
@@ -101,6 +111,38 @@ struct TripMoneyView: View {
             }
         }
         return items
+    }
+
+    /// Checked-off (purchased) items, honoring the store filter + search — shown
+    /// in the collapsed "Bought" section at the bottom of the Shopping list.
+    private var boughtSource: [Expense] {
+        var items = store.purchasedExpenses
+        if let f = storeFilter { items = items.filter { $0.purchasedFrom?.nilIfBlank == f } }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty {
+            items = items.filter {
+                $0.name.localizedCaseInsensitiveContains(q)
+                    || ($0.notes?.localizedCaseInsensitiveContains(q) ?? false)
+                    || ($0.purchasedFrom?.localizedCaseInsensitiveContains(q) ?? false)
+                    || $0.category.localizedCaseInsensitiveContains(q)
+            }
+        }
+        return items
+    }
+
+    /// Bought items grouped by the primary group-by, each sub-group sorted by the
+    /// other dimension then name — mirrors the packing "Packed" section.
+    private var boughtGroups: [(title: String, items: [Expense])] {
+        let other: Grouping = grouping == .category ? .store : .category
+        return Dictionary(grouping: boughtSource, by: { title(for: grouping, item: $0) })
+            .map { (title: $0.key, items: $0.value.sorted { a, b in
+                let ta = title(for: other, item: a), tb = title(for: other, item: b)
+                if ta.caseInsensitiveCompare(tb) != .orderedSame {
+                    return ta.localizedCaseInsensitiveCompare(tb) == .orderedAscending
+                }
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }) }
+            .sorted { catchAllLast($0.title, $1.title) }
     }
 
     /// Alphabetical, but the catch-all buckets ("Other" / "No store") sort last.
@@ -253,6 +295,7 @@ struct TripMoneyView: View {
                         header(for: group)
                     }
                 }
+                boughtSection
             }
         }
         .listSectionSpacing(.compact)
@@ -414,6 +457,60 @@ struct TripMoneyView: View {
                             purchasedFrom: storeName)
             sheet = .expense(e)
         }
+    }
+
+    /// Collapsed-by-default "Bought" section on the Shopping list — checked-off
+    /// (purchased) items, grouped by the primary group-by. Shopping mode only.
+    @ViewBuilder
+    private var boughtSection: some View {
+        if mode == .shopping && !boughtSource.isEmpty {
+            Section {
+                if boughtExpanded {
+                    ForEach(boughtGroups, id: \.title) { g in
+                        boughtSubHeader(g.title)
+                        ForEach(g.items) { item in
+                            PurchaseRow(item: item, onToggle: { moveToShopping(item) },
+                                        strikeWhenPurchased: true)
+                                .contentShape(Rectangle())
+                                .onTapGesture { sheet = .expense(item) }
+                                .swipeActions(edge: .leading) {
+                                    Button { moveToShopping(item) } label: { Label("To shopping", systemImage: "cart") }
+                                        .tint(Theme.Colors.brand)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) { Task { await store.deleteExpense(item) } } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    }
+                }
+            } header: {
+                Button { withAnimation(.snappy) { boughtExpanded.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: boughtExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                        Image(systemName: "checkmark.circle.fill").font(.footnote)
+                        Text("Bought").font(.subheadline.weight(.semibold))
+                        Text("· \(boughtSource.count)").font(.caption).opacity(0.7)
+                        Spacer()
+                    }
+                    .foregroundStyle(.secondary).textCase(nil).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func boughtSubHeader(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon(for: grouping)).font(.caption2)
+            Text(title).font(.caption.weight(.semibold)).textCase(.uppercase).kerning(0.4)
+            Spacer()
+        }
+        .foregroundStyle(headerColor(title))
+        .padding(.leading, 6).padding(.vertical, 2)
+        .listRowSeparator(.hidden)
     }
 
     @ViewBuilder

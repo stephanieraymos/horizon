@@ -44,6 +44,16 @@ struct PackingListView: View {
     @State private var showSaveTemplate = false
     @State private var showManageCategories = false
     @State private var dropTargetTitle: String?
+    // Per-trip: the bottom "Packed" section starts collapsed but remembers if you
+    // expand it.
+    @AppStorage private var packedExpanded: Bool
+
+    init(store: TripDetailStore, trip: Trip) {
+        self.store = store
+        self.trip = trip
+        _packedExpanded = AppStorage(wrappedValue: false,
+                                     "packing.packedExpanded.\(store.tripID.uuidString)")
+    }
 
     enum Grouping: String, CaseIterable { case person = "Person", category = "Category" }
 
@@ -158,6 +168,29 @@ struct PackingListView: View {
         (filtered.filter(\.checked).count, filtered.count)
     }
 
+    /// Still-to-pack items (drive the normal grouped list).
+    private var unpackedItems: [PackingItem] { filtered.filter { !$0.checked } }
+    /// Packed items (collected in the collapsed bottom section).
+    private var packedItems: [PackingItem] { filtered.filter(\.checked) }
+
+    /// The "other" dimension used to sort within the Packed sub-groups.
+    private var otherDimension: Grouping { grouping == .person ? .category : .person }
+
+    /// Packed items grouped by the primary group-by, each sub-group's items sorted
+    /// by the other dimension, then alphabetically.
+    private var packedGroups: [(title: String, items: [PackingItem])] {
+        Dictionary(grouping: packedItems, by: { title(for: grouping, item: $0) })
+            .map { (title: $0.key, items: $0.value.sorted { a, b in
+                let ta = title(for: otherDimension, item: a)
+                let tb = title(for: otherDimension, item: b)
+                if ta.caseInsensitiveCompare(tb) != .orderedSame {
+                    return ta.localizedCaseInsensitiveCompare(tb) == .orderedAscending
+                }
+                return a.item.localizedCaseInsensitiveCompare(b.item) == .orderedAscending
+            }) }
+            .sorted { subGroupBefore($0.title, $1.title) }
+    }
+
     var body: some View {
         List {
             if store.packing.isEmpty {
@@ -180,51 +213,7 @@ struct PackingListView: View {
                     Section {
                         ForEach(group.subgroups) { sub in
                             if sub.title != nil { subHeader(sub, in: group, color: headerColor(group.title)) }
-                            ForEach(sub.items) { item in
-                                PackingRow(item: item, icon: trips.icon(forCategory: item.category),
-                                           subtitle: activeSub == nil ? subtitle(for: item) : nil) {
-                                    Task { await store.togglePacking(item) }
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture { editingItem = item }
-                                .draggable(item.id.uuidString)
-                                // The whole row is a drop target too — drop onto any
-                                // item to join its group/sub-group.
-                                .dropDestination(for: String.self) { ids, _ in
-                                    Task { await moveItems(ids, ontoItemLike: item) }
-                                    return true
-                                }
-                                // Reliable reassignment (drag-and-drop in a List is
-                                // flaky): long-press → move to a category or person.
-                                .contextMenu {
-                                    Menu("Move to category") {
-                                        ForEach(categoryMoveChoices, id: \.self) { c in
-                                            Button { Task { await setCategory(item, c) } } label: {
-                                                Label(c, systemImage: (item.category?.nilIfBlank ?? "Other") == c ? "checkmark" : trips.icon(forCategory: c))
-                                            }
-                                        }
-                                    }
-                                    Menu("Move to person") {
-                                        Button { Task { await setPerson(item, nil) } } label: {
-                                            Label("Everyone", systemImage: item.memberID == nil ? "checkmark" : "person.2")
-                                        }
-                                        ForEach(travelerMembers) { m in
-                                            Button { Task { await setPerson(item, m.id) } } label: {
-                                                Label(m.name, systemImage: item.memberID == m.id ? "checkmark" : "person")
-                                            }
-                                        }
-                                    }
-                                    Button("Edit", systemImage: "pencil") { editingItem = item }
-                                    Button("Delete", systemImage: "trash", role: .destructive) {
-                                        Task { await store.deletePacking(item) }
-                                    }
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                            }
+                            ForEach(sub.items) { item in packingRow(item) }
                         }
                     } header: {
                         HStack(spacing: 6) {
@@ -257,6 +246,7 @@ struct PackingListView: View {
                         } isTargeted: { dropTargetTitle = $0 ? group.title : nil }
                     }
                 }
+                packedSection
             }
         }
         .navigationTitle("Packing")
@@ -374,7 +364,7 @@ struct PackingListView: View {
     }
 
     private var primaryGroups: [PackPrimaryGroup] {
-        Dictionary(grouping: filtered, by: { title(for: grouping, item: $0) })
+        Dictionary(grouping: unpackedItems, by: { title(for: grouping, item: $0) })
             .map { pTitle, pItems -> PackPrimaryGroup in
                 let subgroups: [PackSubGroup]
                 if let sub = activeSub {
@@ -393,6 +383,96 @@ struct PackingListView: View {
                                         subgroups: subgroups)
             }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// A single packing item row with all its interactions (toggle, tap-to-edit,
+    /// drag + drop to regroup, long-press move menu, swipe-delete). Reused by the
+    /// unpacked groups and the Packed section.
+    @ViewBuilder
+    private func packingRow(_ item: PackingItem) -> some View {
+        PackingRow(item: item, icon: trips.icon(forCategory: item.category),
+                   subtitle: activeSub == nil ? subtitle(for: item) : nil) {
+            Task { await store.togglePacking(item) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { editingItem = item }
+        .draggable(item.id.uuidString)
+        .dropDestination(for: String.self) { ids, _ in
+            Task { await moveItems(ids, ontoItemLike: item) }
+            return true
+        }
+        .contextMenu {
+            Menu("Move to category") {
+                ForEach(categoryMoveChoices, id: \.self) { c in
+                    Button { Task { await setCategory(item, c) } } label: {
+                        Label(c, systemImage: (item.category?.nilIfBlank ?? "Other") == c ? "checkmark" : trips.icon(forCategory: c))
+                    }
+                }
+            }
+            Menu("Move to person") {
+                Button { Task { await setPerson(item, nil) } } label: {
+                    Label("Everyone", systemImage: item.memberID == nil ? "checkmark" : "person.2")
+                }
+                ForEach(travelerMembers) { m in
+                    Button { Task { await setPerson(item, m.id) } } label: {
+                        Label(m.name, systemImage: item.memberID == m.id ? "checkmark" : "person")
+                    }
+                }
+            }
+            Button("Edit", systemImage: "pencil") { editingItem = item }
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                Task { await store.deletePacking(item) }
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { Task { await store.deletePacking(item) } } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    /// The collapsed-by-default "Packed" section pinned at the bottom — checked
+    /// items, sub-grouped by the primary group-by.
+    @ViewBuilder
+    private var packedSection: some View {
+        if !packedItems.isEmpty {
+            Section {
+                if packedExpanded {
+                    ForEach(packedGroups, id: \.title) { g in
+                        packedSubHeader(g.title)
+                        ForEach(g.items) { packingRow($0) }
+                    }
+                }
+            } header: {
+                Button { withAnimation(.snappy) { packedExpanded.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: packedExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                        Image(systemName: "checkmark.circle.fill").font(.footnote)
+                        Text("Packed").font(.subheadline.weight(.semibold))
+                        Text("· \(packedItems.count)").font(.caption).opacity(0.7)
+                        Spacer()
+                    }
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Sub-heading inside the Packed section (tinted by the group's colour).
+    private func packedSubHeader(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: grouping == .person ? "person.circle" : trips.icon(forCategory: title))
+                .font(.caption2)
+            Text(title).font(.caption.weight(.semibold)).textCase(.uppercase).kerning(0.4)
+            Spacer()
+        }
+        .foregroundStyle(headerColor(title))
+        .padding(.leading, 6).padding(.vertical, 2)
+        .listRowSeparator(.hidden)
     }
 
     /// Small sub-heading row shown above each secondary bucket, tinted with its

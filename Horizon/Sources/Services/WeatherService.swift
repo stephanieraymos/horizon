@@ -121,6 +121,54 @@ enum WeatherService {
         } catch { return nil }
     }
 
+    /// Historical daily weather (ERA5 archive) for a PAST trip's dates. The
+    /// forecast endpoint collapses past ranges to a single day, so past trips use
+    /// this instead. Archive has no precip-probability, so that's left nil.
+    static func dailyHistory(latitude: Double, longitude: Double,
+                             start: Date, end: Date) async -> [DailyWeather] {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+
+        var comps = URLComponents(string: "https://archive-api.open-meteo.com/v1/archive")!
+        comps.queryItems = [
+            .init(name: "latitude", value: String(latitude)),
+            .init(name: "longitude", value: String(longitude)),
+            .init(name: "daily", value: "weathercode,temperature_2m_max,temperature_2m_min"),
+            .init(name: "temperature_unit", value: "fahrenheit"),
+            .init(name: "timezone", value: "auto"),
+            .init(name: "start_date", value: f.string(from: start)),
+            .init(name: "end_date", value: f.string(from: end)),
+        ]
+        guard let url = comps.url else { return [] }
+
+        struct Daily: Decodable {
+            let time: [String]
+            let weathercode: [Int]
+            let temperature_2m_max: [Double]
+            let temperature_2m_min: [Double]
+        }
+        struct Response: Decodable { let daily: Daily? }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let d = try JSONDecoder().decode(Response.self, from: data).daily else { return [] }
+            return d.time.indices.compactMap { i in
+                guard let date = f.date(from: d.time[i]),
+                      i < d.weathercode.count,
+                      i < d.temperature_2m_max.count,
+                      i < d.temperature_2m_min.count else { return nil }
+                return DailyWeather(
+                    date: date,
+                    tempMax: d.temperature_2m_max[i],
+                    tempMin: d.temperature_2m_min[i],
+                    precipProbability: nil,
+                    code: d.weathercode[i])
+            }
+        } catch { return [] }
+    }
+
     static func dailyForecast(latitude: Double, longitude: Double,
                               start: Date, end: Date) async -> [DailyWeather] {
         let f = DateFormatter()

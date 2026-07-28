@@ -10,10 +10,10 @@ struct SomedayView: View {
     @State private var planTripFor: Destination?
     @State private var newSomedayTrip = false
 
+    // Bare root — AppShell owns this tab's NavigationStack.
     var body: some View {
-        NavigationStack {
-            Group {
-                if trips.somedayTrips.isEmpty && trips.wishlistDestinations.isEmpty {
+        Group {
+            if trips.somedayTrips.isEmpty && trips.wishlistDestinations.isEmpty {
                     ContentUnavailableView {
                         Label("Nothing on the list yet", systemImage: "map")
                     } description: {
@@ -69,7 +69,6 @@ struct SomedayView: View {
                                             destination: dest.name, destinationID: dest.id))
                 }
             }
-        }
     }
 
     private func deleteWishlist(_ offsets: IndexSet) {

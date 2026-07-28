@@ -10,7 +10,7 @@ struct EventsListView: View {
 
     @State private var editing: FamilyEvent?
     @State private var isCreating = false
-    @State private var path: [Trip] = []
+    @State private var openTrip: Trip?
     @State private var makeEventFor: FamilyEvent?
     @State private var linkingEvent: FamilyEvent?
 
@@ -55,50 +55,47 @@ struct EventsListView: View {
         event.eventType == FamilyEventType.birthday.rawValue && memberIDs.contains(event.id)
     }
 
+    // AppShell owns this tab's NavigationStack; the root is bare. Trip pushes go
+    // through `openTrip` + .navigationDestination(item:) instead of a path binding.
     var body: some View {
-        // Value/path-based navigation — the previous `.navigationDestination(item:)`
-        // on the load-swapping content rendered a duplicate nav bar / double back
-        // button. Pushing Trip values onto an explicit path is the robust fix.
-        NavigationStack(path: $path) {
-            content
-                .navigationTitle("Countdown")
-                .toolbar {
-                    if canEdit {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button {
-                                isCreating = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .accessibilityLabel("New event")
+        content
+            .navigationTitle("Countdown")
+            .toolbar {
+                if canEdit {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            isCreating = true
+                        } label: {
+                            Image(systemName: "plus")
                         }
+                        .accessibilityLabel("New event")
                     }
                 }
-                .task {
-                    if events.events.isEmpty { await events.load() }
-                    if family.members.isEmpty { await family.load() }
-                    if trips.trips.isEmpty { await trips.load() }
-                }
-                .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
-                .sheet(item: $editing) { event in
-                    EventEditView(existing: event)
-                }
-                .sheet(isPresented: $isCreating) {
-                    EventEditView(existing: nil)
-                }
-                .sheet(item: $linkingEvent) { event in
-                    LinkTripSheet(event: event)
-                }
-                .eventActions(event: $makeEventFor,
-                              onOpenTrip: { path.append($0) },
-                              onLinkTrip: { linkingEvent = $0 },
-                              onEditCountdown: { editing = $0 })
-        }
+            }
+            .task {
+                if events.events.isEmpty { await events.load() }
+                if family.members.isEmpty { await family.load() }
+                if trips.trips.isEmpty { await trips.load() }
+            }
+            .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+            .sheet(item: $editing) { event in
+                EventEditView(existing: event)
+            }
+            .sheet(isPresented: $isCreating) {
+                EventEditView(existing: nil)
+            }
+            .sheet(item: $linkingEvent) { event in
+                LinkTripSheet(event: event)
+            }
+            .eventActions(event: $makeEventFor,
+                          onOpenTrip: { openTrip = $0 },
+                          onLinkTrip: { linkingEvent = $0 },
+                          onEditCountdown: { editing = $0 })
     }
 
     private func tap(_ event: FamilyEvent, synthetic: Bool) {
         if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
-            path.append(trip)
+            openTrip = trip
         } else if canEdit {
             makeEventFor = event
         }

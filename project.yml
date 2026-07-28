@@ -30,6 +30,8 @@ packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: "2.20.0"
+  AppShellKit:
+    path: ../AppShellKit
 
 targets:
   Horizon:
@@ -62,3 +64,5 @@ targets:
     dependencies:
       - package: Supabase
         product: Supabase
+      - package: AppShellKit
+        product: AppShellKit

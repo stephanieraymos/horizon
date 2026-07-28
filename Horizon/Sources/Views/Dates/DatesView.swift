@@ -9,12 +9,12 @@ struct DatesView: View {
     @State private var editing: DateNight?
     @State private var creating = false
 
+    // Bare root — AppShell owns this tab's NavigationStack.
     var body: some View {
-        NavigationStack {
-            Group {
-                if dates.dates.isEmpty {
-                    emptyState
-                } else {
+        Group {
+            if dates.dates.isEmpty {
+                emptyState
+            } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             if !dates.upcoming.isEmpty {
@@ -53,7 +53,6 @@ struct DatesView: View {
             .task { if dates.dates.isEmpty { await dates.load() } }
             .sheet(item: $editing) { DateNightEditView(existing: $0) }
             .sheet(isPresented: $creating) { DateNightEditView(existing: nil) }
-        }
     }
 
     private func card<Content: View>(_ d: DateNight, @ViewBuilder _ content: () -> Content) -> some View {

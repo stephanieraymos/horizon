@@ -1,26 +1,56 @@
 import SwiftUI
+import AppShellKit
+
+/// Horizon's tabs. First `maxPrimary` show in the bar, the rest in "More"; order
+/// is user-customizable and synced (AppShellKit + app_tab_prefs). AppShell owns
+/// each tab's NavigationStack, so every root view below is bare (no NavigationStack
+/// of its own) — that's what avoids the nested-stack "pushes behind" bug.
+enum HorizonTab: String, CaseIterable, ShellTab {
+    case home, trips, dates, countdown, someday, people
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .home:      "Home"
+        case .trips:     "Trips"
+        case .dates:     "Dates"
+        case .countdown: "Countdown"
+        case .someday:   "Someday"
+        case .people:    "People"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home:      "house"
+        case .trips:     "airplane"
+        case .dates:     "heart"
+        case .countdown: "calendar.badge.clock"
+        case .someday:   "map"
+        case .people:    "person.2"
+        }
+    }
+}
 
 struct MainTabView: View {
-    // Keep to 5 tabs: a 6th+ makes iOS collapse the extras into a "More" tab that
-    // wraps them in its own navigation controller, nesting each tab's own
-    // NavigationStack — the source of the double back button / stray back arrow /
-    // misplaced toolbar. Notes + Settings are reached from Home instead.
+    @State private var prefs = ShellPrefsStore(client: supabase, appKey: "horizon")
+
     var body: some View {
-        TabView {
-            HomeView()
-                .tabItem { Label("Home", systemImage: "house") }
+        AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs) { tab in
+            root(for: tab)
+        }
+    }
 
-            TripsListView()
-                .tabItem { Label("Trips", systemImage: "airplane") }
-
-            SomedayView()
-                .tabItem { Label("Someday", systemImage: "map") }
-
-            DatesView()
-                .tabItem { Label("Dates", systemImage: "heart") }
-
-            EventsListView()
-                .tabItem { Label("Countdown", systemImage: "calendar.badge.clock") }
+    @ViewBuilder
+    private func root(for tab: HorizonTab) -> some View {
+        switch tab {
+        case .home:      HomeView()
+        case .trips:     TripsListView()
+        case .dates:     DatesView()
+        case .countdown: EventsListView()
+        case .someday:   SomedayView()
+        case .people:    PeopleView()
         }
     }
 }

@@ -37,10 +37,11 @@ struct TripsListView: View {
                                    createdBy: family.currentMember?.userID)
     }
 
+    // Bare root — AppShell owns this tab's NavigationStack. TripRow uses a
+    // destination-based NavigationLink, which pushes onto the shell's stack.
     var body: some View {
-        NavigationStack {
-            Group {
-                if !trips.hasLoaded {
+        Group {
+            if !trips.hasLoaded {
                     ProgressView()
                         .controlSize(.large)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -155,7 +156,6 @@ struct TripsListView: View {
                     }
                 }
             }
-        }
     }
 }
 

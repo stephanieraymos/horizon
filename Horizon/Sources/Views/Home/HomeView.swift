@@ -11,16 +11,18 @@ struct HomeView: View {
     @Environment(DashboardStore.self) private var dashboard
     @AppStorage("notifications.enabled") private var notificationsEnabled = true
 
-    @State private var path: [Trip] = []
+    @State private var openTrip: Trip?
     @State private var makeEventFor: FamilyEvent?
     @State private var showSettings = false
     @State private var showNotes = false
 
     private var canEdit: Bool { family.currentMember?.role == .admin }
 
+    // AppShell owns the NavigationStack for this tab; this root is bare. Trip
+    // pushes go through `openTrip` + .navigationDestination(item:) so no path
+    // binding (which the shared shell doesn't expose) is needed.
     var body: some View {
-        NavigationStack(path: $path) {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if let trip = nextTrip {
                         nextTripCard(trip)
@@ -60,25 +62,24 @@ struct HomeView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showNotes) { NotesTabView() }
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
-            .eventActions(event: $makeEventFor, allowLinkEdit: false,
-                          onOpenTrip: { path.append($0) })
-            .task {
-                if trips.trips.isEmpty { await trips.load() }
-                if dates.dates.isEmpty { await dates.load() }
-                if events.events.isEmpty { await events.load() }
-                if family.members.isEmpty { await family.load() }
-                await dashboard.load()
-                await NotificationManager.sync(trips: trips.upcoming,
-                                               reservations: dashboard.upcomingReservations,
-                                               dates: dates.upcoming,
-                                               enabled: notificationsEnabled)
-            }
-            .refreshable {
-                await trips.load(); await dates.load(); await events.load(); await dashboard.load()
-            }
+        .sheet(isPresented: $showNotes) { NotesTabView() }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+        .eventActions(event: $makeEventFor, allowLinkEdit: false,
+                      onOpenTrip: { openTrip = $0 })
+        .task {
+            if trips.trips.isEmpty { await trips.load() }
+            if dates.dates.isEmpty { await dates.load() }
+            if events.events.isEmpty { await events.load() }
+            if family.members.isEmpty { await family.load() }
+            await dashboard.load()
+            await NotificationManager.sync(trips: trips.upcoming,
+                                           reservations: dashboard.upcomingReservations,
+                                           dates: dates.upcoming,
+                                           enabled: notificationsEnabled)
+        }
+        .refreshable {
+            await trips.load(); await dates.load(); await events.load(); await dashboard.load()
         }
     }
 
@@ -236,7 +237,7 @@ struct HomeView: View {
             Label(title, systemImage: systemImage).font(.headline).foregroundStyle(tint)
             ForEach(events) { event in
                 if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
-                    Button { path.append(trip) } label: { countdownRow(event, chevron: true) }
+                    Button { openTrip = trip } label: { countdownRow(event, chevron: true) }
                         .buttonStyle(.plain)
                 } else if canEdit {
                     Button { makeEventFor = event } label: { countdownRow(event, chevron: true) }

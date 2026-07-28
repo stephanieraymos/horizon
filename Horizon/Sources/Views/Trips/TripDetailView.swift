@@ -72,8 +72,14 @@ struct TripDetailView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("Edit trip", systemImage: "pencil") { showEdit = true }
-                    Button("Duplicate trip", systemImage: "plus.square.on.square") {
+                    Button("Edit \(current.kind.label.lowercased())", systemImage: "pencil") { showEdit = true }
+                    if let url = DeepLinkRouter.link(forTrip: current.id) {
+                        ShareLink(item: url, subject: Text(current.name),
+                                  message: Text("Open “\(current.name)” in Horizon")) {
+                            Label("Share link", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button("Duplicate \(current.kind.label.lowercased())", systemImage: "plus.square.on.square") {
                         Task { await duplicate() }
                     }
                     Button("Mood Board", systemImage: "square.grid.2x2") { showMoodBoard = true }
@@ -306,9 +312,11 @@ struct TripDetailView: View {
 
     private var overview: some View {
         VStack(spacing: 0) {
-            if let dest = destinationName { row("Destination", dest, "mappin.and.ellipse") }
+            if let dest = destinationName { row(current.kind.locationLabel, dest, "mappin.and.ellipse") }
             row("Status", current.status.label, current.status.systemImage)
-            if let transport = current.transportation?.nilIfBlank { row("Transportation", transport, "car") }
+            if current.kind.isTravel, let transport = current.transportation?.nilIfBlank {
+                row("Transportation", transport, "car")
+            }
             if let budget = TripFormat.money(current.budget) { row("Budget", budget, "dollarsign.circle") }
         }
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))

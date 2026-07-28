@@ -11,6 +11,7 @@ struct HorizonApp: App {
     @State private var packingTemplates = PackingTemplatesStore()
     @State private var travelerProfiles = TravelerProfilesStore()
     @State private var dashboard = DashboardStore()
+    @State private var deepLink = DeepLinkRouter()
 
     init() {
         // Give the shared image disk cache real capacity so photos are fetched
@@ -31,6 +32,7 @@ struct HorizonApp: App {
                 .environment(packingTemplates)
                 .environment(travelerProfiles)
                 .environment(dashboard)
+                .environment(deepLink)
         }
         #if targetEnvironment(macCatalyst)
         .defaultSize(width: 1100, height: 800)

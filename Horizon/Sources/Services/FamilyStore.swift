@@ -48,6 +48,19 @@ final class FamilyStore {
         members.first { $0.id == id }?.name
     }
 
+    /// Synthetic, never-persisted birthday events derived from members' birthdays.
+    /// Shared by the Home tab and the Countdown board so the synthesis lives in one
+    /// place (id == member.id keeps them stable and member-scoped).
+    var birthdayEvents: [FamilyEvent] {
+        guard let familyID = members.first?.familyID else { return [] }
+        return members.compactMap { m in
+            guard let b = m.birthday else { return nil }
+            return FamilyEvent(id: m.id, familyID: familyID, title: "\(m.name)'s Birthday",
+                               eventType: FamilyEventType.birthday.rawValue, eventDate: b,
+                               isAnnual: true, emoji: "🎂")
+        }
+    }
+
     /// Resolve a member by their auth user id (todos record `created_by` as a
     /// user id, not a member id).
     func memberName(userID: UUID) -> String? {

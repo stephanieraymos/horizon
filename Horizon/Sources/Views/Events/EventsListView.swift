@@ -28,23 +28,8 @@ struct EventsListView: View {
 
     // MARK: - Birthday synthesis
 
-    /// Synthetic FamilyEvent instances derived from FamilyMember.birthday.
-    /// These are never persisted — they live only in memory for display.
-    private var birthdayEvents: [FamilyEvent] {
-        guard let familyID = family.members.first?.familyID else { return [] }
-        return family.members.compactMap { member in
-            guard let birthday = member.birthday else { return nil }
-            return FamilyEvent(
-                id: member.id,               // stable, member-scoped ID
-                familyID: familyID,
-                title: "\(member.name)'s Birthday",
-                eventType: FamilyEventType.birthday.rawValue,
-                eventDate: birthday,
-                isAnnual: true,
-                emoji: "🎂"
-            )
-        }
-    }
+    /// Synthetic member birthdays (built once in FamilyStore).
+    private var birthdayEvents: [FamilyEvent] { family.birthdayEvents }
 
     /// Match key so a real event "covers" a synthetic birthday when they share a
     /// title and the same month/day (a birthday you've turned into an event).

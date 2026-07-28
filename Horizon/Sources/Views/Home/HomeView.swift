@@ -97,16 +97,9 @@ struct HomeView: View {
         return dates.upcoming.filter { ($0.scheduledAt ?? .distantFuture) <= weekOut }
     }
 
-    /// Next two upcoming member birthdays (synthetic from FamilyMember.birthday).
+    /// Next two upcoming member birthdays (synthetic, built once in FamilyStore).
     private var nextBirthdays: [FamilyEvent] {
-        guard let familyID = family.members.first?.familyID else { return [] }
-        return family.members
-            .compactMap { m -> FamilyEvent? in
-                guard let b = m.birthday else { return nil }
-                return FamilyEvent(id: m.id, familyID: familyID, title: "\(m.name)'s Birthday",
-                                   eventType: FamilyEventType.birthday.rawValue, eventDate: b,
-                                   isAnnual: true, emoji: "🎂")
-            }
+        family.birthdayEvents
             .sorted { $0.daysAway < $1.daysAway }
             .prefix(2).map { $0 }
     }

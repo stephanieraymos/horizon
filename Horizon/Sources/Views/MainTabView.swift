@@ -6,29 +6,28 @@ import AppShellKit
 /// each tab's NavigationStack, so every root view below is bare (no NavigationStack
 /// of its own) — that's what avoids the nested-stack "pushes behind" bug.
 enum HorizonTab: String, CaseIterable, ShellTab {
-    case home, trips, dates, countdown, someday, people
+    // Events is the unified trips + countdowns board (replaces separate tabs).
+    case home, events, dates, someday, people
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .home:      "Home"
-        case .trips:     "Trips"
-        case .dates:     "Dates"
-        case .countdown: "Countdown"
-        case .someday:   "Someday"
-        case .people:    "People"
+        case .home:    "Home"
+        case .events:  "Events"
+        case .dates:   "Dates"
+        case .someday: "Someday"
+        case .people:  "People"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .home:      "house"
-        case .trips:     "airplane"
-        case .dates:     "heart"
-        case .countdown: "calendar.badge.clock"
-        case .someday:   "map"
-        case .people:    "person.2"
+        case .home:    "house"
+        case .events:  "calendar"
+        case .dates:   "heart"
+        case .someday: "map"
+        case .people:  "person.2"
         }
     }
 }
@@ -45,12 +44,11 @@ struct MainTabView: View {
     @ViewBuilder
     private func root(for tab: HorizonTab) -> some View {
         switch tab {
-        case .home:      HomeView()
-        case .trips:     TripsListView()
-        case .dates:     DatesView()
-        case .countdown: EventsListView()
-        case .someday:   SomedayView()
-        case .people:    PeopleView()
+        case .home:    HomeView()
+        case .events:  EventsBoardView()
+        case .dates:   DatesView()
+        case .someday: SomedayView()
+        case .people:  PeopleView()
         }
     }
 }

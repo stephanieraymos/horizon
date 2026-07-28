@@ -8,7 +8,7 @@ struct CoverCropView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var focus: UnitPoint
-    @State private var imageSize: CGSize = .zero
+    @State private var overflow: CGSize = .zero
     @GestureState private var dragStart: UnitPoint?
 
     private let bannerHeight: CGFloat = 240
@@ -30,18 +30,20 @@ struct CoverCropView: View {
                     .frame(height: bannerHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.4), lineWidth: 1))
-                    .contentShape(Rectangle())
-                    // High-priority so the drag wins over the sheet's swipe-to-dismiss,
-                    // which otherwise eats vertical pans (the common case for wide banners).
+                    .background(GeometryReader { _ in Color.clear
+                        .task(id: trip.coverPhotoURL) { await measureOverflow(frame: CGSize(width: geo.size.width, height: bannerHeight)) }
+                    })
+                    // High-priority + minimumDistance 0 so the image claims the
+                    // touch before the enclosing sheet's drag-to-dismiss pan can
+                    // steal it — otherwise vertical drags just move the sheet and
+                    // the cover appears "not draggable".
                     .highPriorityGesture(
-                        DragGesture()
+                        DragGesture(minimumDistance: 0)
                             .updating($dragStart) { _, state, _ in if state == nil { state = focus } }
                             .onChanged { value in
-                                let range = panRange(frame: CGSize(width: geo.size.width, height: bannerHeight))
-                                guard range.width > 0 || range.height > 0 else { return }
                                 let base = dragStart ?? focus
-                                let dx = range.width  > 0 ? Double(value.translation.width  / range.width)  : 0
-                                let dy = range.height > 0 ? Double(value.translation.height / range.height) : 0
+                                let dx = overflow.width  > 0 ? Double(value.translation.width  / overflow.width)  : 0
+                                let dy = overflow.height > 0 ? Double(value.translation.height / overflow.height) : 0
                                 focus = UnitPoint(x: min(max(base.x - dx, 0), 1),
                                                   y: min(max(base.y - dy, 0), 1))
                             }
@@ -59,11 +61,6 @@ struct CoverCropView: View {
             .padding(.top, 20)
             .navigationTitle("Adjust Cover")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled()
-            .task(id: trip.coverPhotoURL) {
-                guard let c = trip.coverPhotoURL?.nilIfBlank else { imageSize = .zero; return }
-                imageSize = await HorizonImageLoader.loadCover(c)?.size ?? .zero
-            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -75,13 +72,11 @@ struct CoverCropView: View {
         }
     }
 
-    /// How far the aspect-filled image overflows the frame in each axis — the
-    /// pannable range. Computed live from the current frame so there's no async
-    /// measurement to race with the gesture.
-    private func panRange(frame: CGSize) -> CGSize {
-        guard imageSize.width > 0, imageSize.height > 0, frame.width > 0 else { return .zero }
-        let scaled = AdjustableCoverImage<Color>.layout(imageSize: imageSize, frame: frame, focus: focus).size
-        return CGSize(width: max(0, scaled.width - frame.width),
-                      height: max(0, scaled.height - frame.height))
+    private func measureOverflow(frame: CGSize) async {
+        guard let cover = trip.coverPhotoURL?.nilIfBlank,
+              let img = await HorizonImageLoader.loadCover(cover) else { return }
+        overflow = AdjustableCoverImage<Color>.layout(imageSize: img.size, frame: frame, focus: focus).size
+        overflow = CGSize(width: max(0, overflow.width - frame.width),
+                          height: max(0, overflow.height - frame.height))
     }
 }

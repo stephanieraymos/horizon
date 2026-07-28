@@ -106,11 +106,17 @@ struct TripWeatherSection: View {
         let today = cal.startOfDay(for: Date())
         let windowEnd = cal.date(byAdding: .day, value: WeatherService.forecastWindowDays, to: today) ?? today
         let departDay = cal.startOfDay(for: depart)
+        let returnDay = cal.startOfDay(for: returnDate ?? depart)
 
-        guard departDay <= windowEnd else { phase = .tooFar; return }
+        // A fully-past trip has no forecast — show the historical archive for the
+        // actual trip dates instead of collapsing to a single (today) day.
+        let isPast = returnDay < today
+        if !isPast {
+            guard departDay <= windowEnd else { phase = .tooFar; return }
+        }
 
-        let start = max(today, departDay)
-        let end = min(cal.startOfDay(for: returnDate ?? depart), windowEnd)
+        let start = isPast ? departDay : max(today, departDay)
+        let end = isPast ? returnDay : min(returnDay, windowEnd)
         let locID = target.lat.map { "\($0),\(target.lon ?? 0)" } ?? target.query.lowercased()
         let key = cacheKey(locID: locID, start: start, end: end)
 
@@ -135,8 +141,9 @@ struct TripWeatherSection: View {
         }
         guard let lat, let lon else { phase = .empty; return }
 
-        let result = await WeatherService.dailyForecast(latitude: lat, longitude: lon,
-                                                        start: start, end: max(start, end))
+        let result = isPast
+            ? await WeatherService.dailyHistory(latitude: lat, longitude: lon, start: start, end: max(start, end))
+            : await WeatherService.dailyForecast(latitude: lat, longitude: lon, start: start, end: max(start, end))
         if Task.isCancelled { return }
         resolvedName = name
         days = result

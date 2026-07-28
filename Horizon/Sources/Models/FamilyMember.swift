@@ -17,9 +17,14 @@ struct FamilyMember: Codable, Identifiable, Hashable {
     var role: FamilyRole
     var avatarURL: String?
     var birthday: Date?
+    /// The person's bucket: household | extended | friend | coworker | provider |
+    /// tester | … (freeform, editable in People management).
+    var householdType: String?
     let createdAt: Date
 
     var isAdmin: Bool { role == .admin }
+    /// A friendlier label for the bucket.
+    var bucketLabel: String { (householdType ?? "household").capitalized }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -28,6 +33,7 @@ struct FamilyMember: Codable, Identifiable, Hashable {
         case name, role
         case avatarURL = "avatar_url"
         case birthday
+        case householdType = "household_type"
         case createdAt = "created_at"
     }
 
@@ -40,6 +46,24 @@ struct FamilyMember: Codable, Identifiable, Hashable {
         role     = (try? c.decode(FamilyRole.self, forKey: .role)) ?? .none
         avatarURL = try c.decodeIfPresent(String.self, forKey: .avatarURL)
         birthday  = try decodeDateOnlyIfPresent(c, forKey: .birthday)
+        householdType = try c.decodeIfPresent(String.self, forKey: .householdType)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+    }
+}
+
+/// A directional person↔person relationship (people_relationships): `label`
+/// describes `fromPerson`'s relation to `toPerson` ("mom", "friend", …).
+struct PersonRelationship: Codable, Identifiable, Hashable {
+    let id: UUID
+    var familyID: UUID
+    var fromPerson: UUID
+    var toPerson: UUID
+    var label: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, label
+        case familyID = "family_id"
+        case fromPerson = "from_person"
+        case toPerson = "to_person"
     }
 }

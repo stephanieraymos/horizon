@@ -54,6 +54,80 @@ final class FamilyStore {
         members.first { $0.userID == userID }?.name
     }
 
+    // MARK: - People management (buckets + relationships)
+
+    var relationships: [PersonRelationship] = []
+
+    /// Distinct buckets present on the roster, common ones first, then the rest.
+    var buckets: [String] {
+        let present = Set(members.compactMap { $0.householdType?.nilIfBlank })
+        let common = ["household", "extended", "friend", "coworker", "provider"]
+        let ordered = common.filter(present.contains)
+        return ordered + present.subtracting(ordered).sorted()
+    }
+
+    func members(inBucket bucket: String) -> [FamilyMember] {
+        members.filter { ($0.householdType ?? "household") == bucket }
+    }
+
+    func loadRelationships() async {
+        guard let familyID else { relationships = []; return }
+        relationships = (try? await supabase.from("people_relationships")
+            .select().eq("family_id", value: familyID).execute().value) ?? []
+    }
+
+    /// Change a person's bucket (household_type). Editable, and new bucket names
+    /// are allowed — it's freeform text.
+    func setBucket(_ personID: UUID, to bucket: String) async {
+        let trimmed = bucket.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty else { return }
+        struct Patch: Encodable { let household_type: String }
+        do {
+            try await supabase.from("fam_family_members")
+                .update(Patch(household_type: trimmed)).eq("id", value: personID).execute()
+            if let i = members.firstIndex(where: { $0.id == personID }) {
+                members[i].householdType = trimmed
+            }
+        } catch { /* non-fatal */ }
+    }
+
+    /// Relationships involving a person, in both directions, as (label, other person).
+    func relationships(for personID: UUID) -> [(label: String, other: FamilyMember)] {
+        var out: [(String, FamilyMember)] = []
+        for r in relationships {
+            if r.fromPerson == personID, let m = members.first(where: { $0.id == r.toPerson }) {
+                out.append((r.label, m))
+            } else if r.toPerson == personID, let m = members.first(where: { $0.id == r.fromPerson }) {
+                // Show the reverse phrasing: "<other> is <label>" reads on their card.
+                out.append(("\(r.label) →", m))
+            }
+        }
+        return out
+    }
+
+    @discardableResult
+    func addRelationship(from: UUID, to: UUID, label: String) async -> Bool {
+        guard let familyID, from != to else { return false }
+        let trimmed = label.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        struct Row: Encodable { let family_id: String; let from_person: String; let to_person: String; let label: String }
+        do {
+            let saved: PersonRelationship = try await supabase.from("people_relationships")
+                .insert(Row(family_id: familyID.uuidString, from_person: from.uuidString,
+                            to_person: to.uuidString, label: trimmed))
+                .select().single().execute().value
+            relationships.append(saved)
+            return true
+        } catch { return false }
+    }
+
+    func deleteRelationship(_ id: UUID) async {
+        do {
+            try await supabase.from("people_relationships").delete().eq("id", value: id).execute()
+            relationships.removeAll { $0.id == id }
+        } catch { /* non-fatal */ }
+    }
+
     /// Creates a lightweight person (role=none) so they're reusable on future
     /// trips. Returns the created member, or an existing one with the same name.
     @discardableResult
@@ -63,11 +137,18 @@ final class FamilyStore {
         if let existing = members.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
             return existing
         }
-        struct NewMember: Encodable { let family_id: String; let name: String; let role: String }
+        // Default a newly-added person to a neutral "friend" bucket, NOT the
+        // underlying table's 'household' default — otherwise every guest added to
+        // a trip/party gets promoted to immediate family. The bucket is editable
+        // later in People management.
+        struct NewMember: Encodable {
+            let family_id: String; let name: String; let role: String; let household_type: String
+        }
         do {
             let row: FamilyMember = try await supabase
                 .from("fam_family_members")
-                .insert(NewMember(family_id: familyID.uuidString, name: trimmed, role: "none"))
+                .insert(NewMember(family_id: familyID.uuidString, name: trimmed,
+                                  role: "none", household_type: "friend"))
                 .select().single().execute().value
             members.append(row)
             members.sort { $0.name < $1.name }

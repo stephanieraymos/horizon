@@ -61,16 +61,23 @@ struct SettingsView: View {
                 } footer: {
                     Text("Reminders to start packing, plus the night before a reservation and a heads-up before a date.")
                 }
-                Section("Trip planning") {
-                    Button {
-                        showTemplates = true
+                Section("People") {
+                    NavigationLink {
+                        PeopleView()
                     } label: {
-                        Label("Packing Templates", systemImage: "suitcase.fill")
+                        Label("Manage People", systemImage: "person.2.fill")
                     }
                     Button {
                         showTravelers = true
                     } label: {
                         Label("Travelers & Documents", systemImage: "person.text.rectangle")
+                    }
+                }
+                Section("Trip planning") {
+                    Button {
+                        showTemplates = true
+                    } label: {
+                        Label("Packing Templates", systemImage: "suitcase.fill")
                     }
                 }
                 Section("Account") {

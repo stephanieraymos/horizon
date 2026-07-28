@@ -5,6 +5,7 @@ import SwiftUI
 struct TripTodosSection: View {
     let store: TripDetailStore
     let familyID: UUID
+    var kind: PlanKind = .trip
     @Environment(FamilyStore.self) private var family
 
     @State private var showAdd = false
@@ -12,9 +13,10 @@ struct TripTodosSection: View {
     // Per-trip so collapsing one trip's checklist doesn't collapse them all.
     @AppStorage private var collapsed: Bool
 
-    init(store: TripDetailStore, familyID: UUID) {
+    init(store: TripDetailStore, familyID: UUID, kind: PlanKind = .trip) {
         self.store = store
         self.familyID = familyID
+        self.kind = kind
         _collapsed = AppStorage(wrappedValue: false, "trip.checklist.collapsed.\(store.tripID.uuidString)")
     }
 
@@ -58,7 +60,9 @@ struct TripTodosSection: View {
 
             if !collapsed {
                 if store.todos.isEmpty {
-                    Text("Add pre-trip to-dos — book the rental, renew passports, arrange a sitter.")
+                    Text(kind.isTravel
+                         ? "Add pre-trip to-dos — book the rental, renew passports, arrange a sitter."
+                         : "Add to-dos — book the venue, order the cake, send the invites.")
                         .font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))

@@ -8,9 +8,33 @@ import Supabase
 final class AttendeesStore {
     var attendees: [TripAttendee] = []
 
-    func load(tripID: UUID) async {
-        attendees = (try? await supabase.from("fam_trip_attendees")
+    private func fetch(_ tripID: UUID) async -> [TripAttendee] {
+        (try? await supabase.from("fam_trip_attendees")
             .select().eq("trip_id", value: tripID).order("created_at").execute().value) ?? []
+    }
+
+    /// Load the guest list, seeding it from the plan's existing people (the
+    /// `travelers` picked in the editor — stored as names) that don't yet have a
+    /// guest row, so converting a trip → party carries those people over as invited
+    /// guests. Each seed is (memberID, name): a roster member seeds by id, an ad-hoc
+    /// typed-in traveler seeds by name.
+    func load(tripID: UUID, familyID: UUID, seeds: [(memberID: UUID?, name: String)] = []) async {
+        var rows = await fetch(tripID)
+        let haveMembers = Set(rows.compactMap { $0.memberID })
+        let haveNames = Set(rows.compactMap { $0.name })
+        var didSeed = false
+        for s in seeds {
+            if let mid = s.memberID {
+                if haveMembers.contains(mid) { continue }
+            } else if haveNames.contains(s.name) {
+                continue
+            }
+            _ = await add(tripID: tripID, familyID: familyID,
+                          memberID: s.memberID, name: s.memberID == nil ? s.name : nil)
+            didSeed = true
+        }
+        if didSeed { rows = await fetch(tripID) }
+        attendees = rows
     }
 
     @discardableResult
@@ -51,6 +75,9 @@ struct AttendeesSection: View {
     let tripID: UUID
     let familyID: UUID
     let peopleLabel: String
+    /// The plan's existing people (trip travelers, stored as names) to seed the
+    /// guest list from.
+    var travelerNames: [String] = []
 
     @Environment(FamilyStore.self) private var family
     @State private var store = AttendeesStore()
@@ -108,7 +135,13 @@ struct AttendeesSection: View {
                 }
             }
         }
-        .task { await store.load(tripID: tripID); if family.members.isEmpty { await family.load() } }
+        .task {
+            if family.members.isEmpty { await family.load() }
+            let seeds: [(memberID: UUID?, name: String)] = travelerNames.map { name in
+                (family.members.first { $0.name == name }?.id, name)
+            }
+            await store.load(tripID: tripID, familyID: familyID, seeds: seeds)
+        }
         .sheet(isPresented: $showAdd) {
             AddAttendeeSheet(tripID: tripID, familyID: familyID, store: store,
                              existingMemberIDs: Set(store.attendees.compactMap { $0.memberID }))

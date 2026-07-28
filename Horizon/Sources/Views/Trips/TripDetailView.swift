@@ -43,7 +43,8 @@ struct TripDetailView: View {
                     travelersStrip
                 } else {
                     AttendeesSection(tripID: current.id, familyID: current.familyID,
-                                     peopleLabel: current.kind.peopleLabel)
+                                     peopleLabel: current.kind.peopleLabel,
+                                     travelerNames: current.travelers ?? [])
                 }
                 if !passportWarnings.isEmpty { passportCallout }
                 overview
@@ -57,10 +58,16 @@ struct TripDetailView: View {
                 reservationsSection
                 itinerarySection
                 notesSection
-                TripTodosSection(store: detail, familyID: current.familyID)
-                TripPackingSection(store: detail, trip: current)
+                TripTodosSection(store: detail, familyID: current.familyID, kind: current.kind)
+                // Packing + travel Documents are trip-only — a party/gathering doesn't
+                // pack a suitcase or need passports/boarding passes.
+                if current.kind.isTravel {
+                    TripPackingSection(store: detail, trip: current)
+                }
                 TripMoneySection(store: detail, trip: current, familyID: current.familyID)
-                TripDocumentsSection(store: detail, familyID: current.familyID)
+                if current.kind.isTravel {
+                    TripDocumentsSection(store: detail, familyID: current.familyID)
+                }
             }
             .padding()
         }
@@ -349,7 +356,9 @@ struct TripDetailView: View {
             }
 
             if detail.reservations.isEmpty {
-                emptyHint("No flights, lodging, or bookings yet.")
+                emptyHint(current.kind.isTravel
+                          ? "No flights, lodging, or bookings yet."
+                          : "No bookings yet — venue, catering, rentals.")
             } else {
                 ForEach(detail.reservationsByType, id: \.type) { group in
                     ForEach(group.items) { res in
@@ -376,7 +385,7 @@ struct TripDetailView: View {
 
     private var itinerarySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Itinerary") {
+            sectionHeader(current.kind.isTravel ? "Itinerary" : "Schedule") {
                 Button {
                     editingActivity = ItineraryEditContext(
                         activity: nil, fromDayID: nil,
@@ -385,7 +394,9 @@ struct TripDetailView: View {
             }
 
             if !detail.hasItinerary {
-                emptyHint("Plan a day-by-day schedule.")
+                emptyHint(current.kind.isTravel
+                          ? "Plan a day-by-day schedule."
+                          : "Plan the schedule — when things happen.")
             } else {
                 ForEach(detail.itineraryTimeline) { group in
                     ItineraryDayTimeline(
@@ -421,7 +432,7 @@ struct TripDetailView: View {
             NavigationLink { TripNotesEditorView(trip: current) } label: {
                 HStack {
                     Image(systemName: "note.text").foregroundStyle(Theme.Colors.brand)
-                    Text(notesPreview ?? "Add trip notes")
+                    Text(notesPreview ?? (current.kind.isTravel ? "Add trip notes" : "Add notes"))
                         .foregroundStyle(notesPreview == nil ? .secondary : .primary)
                         .lineLimit(2)
                     Spacer()

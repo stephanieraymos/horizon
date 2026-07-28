@@ -88,7 +88,8 @@ struct TripEditView: View {
                     TravelerField(
                         selected: $travelers,
                         members: family.members,
-                        onCreate: { await family.createMember(name: $0)?.name })
+                        onCreate: { await family.createMember(name: $0)?.name },
+                        placeholder: draft.kind.isTravel ? "Add a traveler" : "Add a guest")
                 }
 
                 Section("Details") {

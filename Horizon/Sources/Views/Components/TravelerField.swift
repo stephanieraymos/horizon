@@ -8,6 +8,8 @@ struct TravelerField: View {
     let members: [FamilyMember]
     /// Create a new person; returns the stored name (or nil on failure).
     var onCreate: (String) async -> String?
+    /// Field prompt — "Add a traveler" for trips, "Add a guest" for parties, etc.
+    var placeholder: String = "Add a traveler"
 
     @State private var query = ""
     @FocusState private var focused: Bool
@@ -54,7 +56,7 @@ struct TravelerField: View {
             }
         }
 
-        TextField("Add a traveler", text: $query)
+        TextField(placeholder, text: $query)
             .focused($focused)
             .autocorrectionDisabled()
 

@@ -37,7 +37,14 @@ struct TripDetailView: View {
             VStack(spacing: 20) {
                 coverBanner
                 header
-                travelersStrip
+                // Trips keep the quick traveler avatars; parties/gatherings get a
+                // full RSVP guest list (invited → going/maybe/declined).
+                if current.kind.isTravel {
+                    travelersStrip
+                } else {
+                    AttendeesSection(tripID: current.id, familyID: current.familyID,
+                                     peopleLabel: current.kind.peopleLabel)
+                }
                 if !passportWarnings.isEmpty { passportCallout }
                 overview
                 if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }

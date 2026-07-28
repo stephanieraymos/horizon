@@ -36,11 +36,14 @@ struct EventActions: ViewModifier {
                                 isPresented: Binding(get: { event != nil },
                                                      set: { if !$0 { event = nil } }),
                                 presenting: event) { ev in
-                Button("Create one-day event") {
+                Button("Just a countdown") {
                     let e = ev; event = nil; creatingOneDayFrom = e
                 }
-                Button("Create multi-day event") {
-                    let e = ev; event = nil; Task { await createTrip(from: e) }
+                Button("Plan a party / gathering") {
+                    let e = ev; event = nil; Task { await createTrip(from: e, kind: .party) }
+                }
+                Button("Plan a trip") {
+                    let e = ev; event = nil; Task { await createTrip(from: e, kind: .trip) }
                 }
                 if allowLinkEdit && !isSynthetic(ev) {
                     Button("Link an existing trip") {
@@ -54,17 +57,17 @@ struct EventActions: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { ev in
-                Text("Add “\(ev.title)” as a one-day event, or plan a multi-day trip around it.")
+                Text("Keep “\(ev.title)” as a simple countdown, or plan a party/gathering or a trip around it.")
             }
             .sheet(item: $creatingOneDayFrom) { ev in
                 EventEditView(existing: nil, prefillTitle: ev.title, prefillDate: seedDate(ev))
             }
     }
 
-    private func createTrip(from event: FamilyEvent) async {
+    private func createTrip(from event: FamilyEvent, kind: PlanKind) async {
         guard let familyID = family.familyID else { return }
         let date = seedDate(event)
-        let trip = Trip(familyID: familyID, name: event.title, departDate: date,
+        let trip = Trip(familyID: familyID, name: event.title, kind: kind, departDate: date,
                         status: .planning, createdBy: family.currentMember?.id)
         await trips.save(trip)
         if isSynthetic(event) {

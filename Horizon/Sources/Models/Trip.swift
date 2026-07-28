@@ -1,5 +1,42 @@
 import Foundation
 
+/// What kind of plan a `fam_trips` row represents. Defaults to `.trip`, so the
+/// same rich planner (places, people, reservations, countdown) backs parties and
+/// gatherings too — with travel-specific labels swapped out for non-trips.
+enum PlanKind: String, Codable, CaseIterable, Hashable {
+    case trip, party, gathering, dinner, celebration, other
+
+    var label: String {
+        switch self {
+        case .trip:        return "Trip"
+        case .party:       return "Party"
+        case .gathering:   return "Gathering"
+        case .dinner:      return "Dinner"
+        case .celebration: return "Celebration"
+        case .other:       return "Event"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .trip:        return "airplane"
+        case .party:       return "party.popper.fill"
+        case .gathering:   return "person.3.fill"
+        case .dinner:      return "fork.knife"
+        case .celebration: return "balloon.2.fill"
+        case .other:       return "calendar"
+        }
+    }
+
+    /// True only for actual travel — gates transportation, packing, passports, etc.
+    var isTravel: Bool { self == .trip }
+
+    /// Field labels adapt to the kind.
+    var locationLabel: String { isTravel ? "Destination" : "Location" }
+    var peopleLabel: String   { isTravel ? "Travelers" : "Guests" }
+    var placesLabel: String   { isTravel ? "Places" : "Where" }
+}
+
 enum TripStatus: String, Codable, CaseIterable, Hashable {
     case planning
     case booked
@@ -32,6 +69,8 @@ struct Trip: Codable, Identifiable, Hashable {
     let id: UUID
     var familyID: UUID
     var name: String
+    /// trip | party | gathering | … — drives label swaps and which sections show.
+    var kind: PlanKind
     var destination: String?
     var destinationID: UUID?
     var departDate: Date?
@@ -108,7 +147,7 @@ struct Trip: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id
         case familyID = "family_id"
-        case name, destination
+        case name, kind, destination
         case destinationID = "destination_id"
         case departDate = "depart_date"
         case returnDate = "return_date"
@@ -126,12 +165,13 @@ struct Trip: Codable, Identifiable, Hashable {
         case weatherCache = "weather_cache"
     }
 
-    init(id: UUID = UUID(), familyID: UUID, name: String, destination: String? = nil,
+    init(id: UUID = UUID(), familyID: UUID, name: String, kind: PlanKind = .trip,
+         destination: String? = nil,
          destinationID: UUID? = nil, departDate: Date? = nil, returnDate: Date? = nil,
          travelers: [String]? = nil, coverPhotoURL: String? = nil, transportation: String? = nil,
          status: TripStatus = .planning, budget: Double? = nil, placeID: UUID? = nil,
          archived: Bool = false, createdBy: UUID? = nil) {
-        self.id = id; self.familyID = familyID; self.name = name
+        self.id = id; self.familyID = familyID; self.name = name; self.kind = kind
         self.destination = destination; self.destinationID = destinationID
         self.departDate = departDate; self.returnDate = returnDate
         self.travelers = travelers; self.coverPhotoURL = coverPhotoURL
@@ -145,6 +185,7 @@ struct Trip: Codable, Identifiable, Hashable {
         id            = try c.decode(UUID.self, forKey: .id)
         familyID      = try c.decode(UUID.self, forKey: .familyID)
         name          = try c.decode(String.self, forKey: .name)
+        kind          = (try? c.decode(PlanKind.self, forKey: .kind)) ?? .trip
         destination   = try c.decodeIfPresent(String.self, forKey: .destination)
         destinationID = try c.decodeIfPresent(UUID.self, forKey: .destinationID)
         departDate    = try decodeDateOnlyIfPresent(c, forKey: .departDate)
@@ -172,6 +213,7 @@ struct Trip: Codable, Identifiable, Hashable {
         try c.encode(id, forKey: .id)
         try c.encode(familyID, forKey: .familyID)
         try c.encode(name, forKey: .name)
+        try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(destination, forKey: .destination)
         try c.encodeIfPresent(destinationID, forKey: .destinationID)
         if let departDate { try encodeDateOnly(&c, departDate, forKey: .departDate) }

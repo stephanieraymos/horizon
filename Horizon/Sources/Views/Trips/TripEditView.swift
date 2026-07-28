@@ -35,7 +35,12 @@ struct TripEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Trip name", text: $draft.name)
+                    TextField("\(draft.kind.label) name", text: $draft.name)
+                    Picker("Type", selection: $draft.kind) {
+                        ForEach(PlanKind.allCases, id: \.self) { k in
+                            Label(k.label, systemImage: k.systemImage).tag(k)
+                        }
+                    }
                 }
 
                 Section {
@@ -48,9 +53,11 @@ struct TripEditView: View {
                         options: destinationOptions,
                         pickIcon: "mappin.and.ellipse")
                 } header: {
-                    Text("Destination")
+                    Text(draft.kind.locationLabel)
                 } footer: {
-                    Text("Trips sharing a destination (Disneyland, AfterShock…) group together.")
+                    if draft.kind.isTravel {
+                        Text("Trips sharing a destination (Disneyland, AfterShock…) group together.")
+                    }
                 }
 
                 Section("Dates") {
@@ -77,7 +84,7 @@ struct TripEditView: View {
                     }
                 }
 
-                Section("Travelers") {
+                Section(draft.kind.peopleLabel) {
                     TravelerField(
                         selected: $travelers,
                         members: family.members,
@@ -85,17 +92,19 @@ struct TripEditView: View {
                 }
 
                 Section("Details") {
-                    TextField("Transportation", text: Binding(
-                        get: { draft.transportation ?? "" },
-                        set: { draft.transportation = $0.nilIfBlank }
-                    ))
+                    if draft.kind.isTravel {
+                        TextField("Transportation", text: Binding(
+                            get: { draft.transportation ?? "" },
+                            set: { draft.transportation = $0.nilIfBlank }
+                        ))
+                    }
                     TextField("Budget (USD)", text: $budgetText)
                         #if !targetEnvironment(macCatalyst)
                         .keyboardType(.numberPad)
                         #endif
                 }
             }
-            .navigationTitle(isNew ? "New Trip" : "Edit Trip")
+            .navigationTitle(isNew ? "New \(draft.kind.label)" : "Edit \(draft.kind.label)")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

@@ -42,7 +42,7 @@ struct PeopleView: View {
             Text(person.name)
             Spacer()
             if let first = family.relationships(for: person.id).first {
-                Text("\(first.label) \(first.other.name)")
+                Text(first.text)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }

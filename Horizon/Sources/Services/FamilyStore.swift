@@ -80,7 +80,10 @@ final class FamilyStore {
     /// are allowed — it's freeform text.
     func setBucket(_ personID: UUID, to bucket: String) async {
         let trimmed = bucket.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !trimmed.isEmpty else { return }
+        // 'provider' is the medical directory (excluded from the fam_family_members
+        // view). Setting it here would silently expel the person from Horizon into
+        // Glade's provider list with no way back — reserve it.
+        guard !trimmed.isEmpty, trimmed != "provider" else { return }
         struct Patch: Encodable { let household_type: String }
         do {
             try await supabase.from("fam_family_members")
@@ -91,15 +94,16 @@ final class FamilyStore {
         } catch { /* non-fatal */ }
     }
 
-    /// Relationships involving a person, in both directions, as (label, other person).
-    func relationships(for personID: UUID) -> [(label: String, other: FamilyMember)] {
+    /// Relationships involving a person, in both directions, as a readable phrase
+    /// plus the other person. A row "X is L of Y": on X's card → "L of Y"; on Y's
+    /// card → "X is L".
+    func relationships(for personID: UUID) -> [(text: String, other: FamilyMember)] {
         var out: [(String, FamilyMember)] = []
         for r in relationships {
             if r.fromPerson == personID, let m = members.first(where: { $0.id == r.toPerson }) {
-                out.append((r.label, m))
+                out.append(("\(r.label) of \(m.name)", m))
             } else if r.toPerson == personID, let m = members.first(where: { $0.id == r.fromPerson }) {
-                // Show the reverse phrasing: "<other> is <label>" reads on their card.
-                out.append(("\(r.label) →", m))
+                out.append(("\(m.name) is \(r.label)", m))
             }
         }
         return out

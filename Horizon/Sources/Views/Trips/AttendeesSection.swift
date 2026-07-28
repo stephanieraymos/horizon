@@ -137,8 +137,18 @@ struct AttendeesSection: View {
         }
         .task {
             if family.members.isEmpty { await family.load() }
-            let seeds: [(memberID: UUID?, name: String)] = travelerNames.map { name in
-                (family.members.first { $0.name == name }?.id, name)
+            // Resolve each traveler name to a shared `people` row, creating one for
+            // ad-hoc names that aren't on the roster yet — so a trip→party's guests
+            // all live in `people` (and appear in Glade), never as name-only rows.
+            var seeds: [(memberID: UUID?, name: String)] = []
+            for name in travelerNames {
+                if let existing = family.members.first(where: { $0.name == name }) {
+                    seeds.append((existing.id, name))
+                } else if let created = await family.createMember(name: name) {
+                    seeds.append((created.id, name))
+                } else {
+                    seeds.append((nil, name))
+                }
             }
             await store.load(tripID: tripID, familyID: familyID, seeds: seeds)
         }
@@ -168,7 +178,18 @@ private struct AddAttendeeSheet: View {
                         Button("Add") {
                             let n = newName.trimmingCharacters(in: .whitespaces)
                             guard !n.isEmpty else { return }
-                            Task { await store.add(tripID: tripID, familyID: familyID, memberID: nil, name: n); dismiss() }
+                            Task {
+                                // Back every new guest with a real shared `people`
+                                // row (via FamilyStore → fam_family_members view →
+                                // people) so they show up in Glade — never store a
+                                // name-only attendee. Fall back to name-only only if
+                                // the people insert fails, so the guest isn't lost.
+                                let member = await family.createMember(name: n)
+                                await store.add(tripID: tripID, familyID: familyID,
+                                                memberID: member?.id,
+                                                name: member == nil ? n : nil)
+                                dismiss()
+                            }
                         }
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }

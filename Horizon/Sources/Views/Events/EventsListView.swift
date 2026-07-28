@@ -212,6 +212,10 @@ struct EventsBoardView: View {
                 .navigationTitle("Events")
                 .searchable(text: $search, prompt: "Search trips & events")
                 .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+                // Trip/party rows use value-based NavigationLink(value:), which
+                // needs a matching for:-destination — without it the row highlights
+                // but never pushes (the party-row "won't open" bug).
+                .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {

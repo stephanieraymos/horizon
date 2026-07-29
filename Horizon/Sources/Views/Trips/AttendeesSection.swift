@@ -20,20 +20,29 @@ final class AttendeesStore {
     /// typed-in traveler seeds by name.
     func load(tripID: UUID, familyID: UUID, seeds: [(memberID: UUID?, name: String)] = []) async {
         var rows = await fetch(tripID)
-        let haveMembers = Set(rows.compactMap { $0.memberID })
-        let haveNames = Set(rows.compactMap { $0.name })
-        var didSeed = false
-        for s in seeds {
-            if let mid = s.memberID {
-                if haveMembers.contains(mid) { continue }
-            } else if haveNames.contains(s.name) {
-                continue
+        // Seed from the plan's travelers ONLY on the first load (empty list) — a
+        // one-time trip→party carry-over. Re-seeding on every visit would
+        // resurrect guests the user deliberately removed (travelers persist on
+        // the trip), making removal of a traveler-guest impossible.
+        if rows.isEmpty, !seeds.isEmpty {
+            var seededMembers = Set<UUID>()
+            var seededNames = Set<String>()
+            for s in seeds {
+                let key = s.name.lowercased()
+                if let mid = s.memberID {
+                    // Skip if this person was already seeded by id OR by name
+                    // (an ad-hoc traveler with the same name), so no dup rows.
+                    if seededMembers.contains(mid) || seededNames.contains(key) { continue }
+                } else if seededNames.contains(key) {
+                    continue
+                }
+                _ = await add(tripID: tripID, familyID: familyID,
+                              memberID: s.memberID, name: s.memberID == nil ? s.name : nil)
+                if let mid = s.memberID { seededMembers.insert(mid) }
+                seededNames.insert(key)
             }
-            _ = await add(tripID: tripID, familyID: familyID,
-                          memberID: s.memberID, name: s.memberID == nil ? s.name : nil)
-            didSeed = true
+            rows = await fetch(tripID)
         }
-        if didSeed { rows = await fetch(tripID) }
         attendees = rows
     }
 
@@ -168,6 +177,16 @@ private struct AddAttendeeSheet: View {
         return available.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
+    /// Lowercased display names already on the guest list (roster members by
+    /// resolved name + ad-hoc typed names), so the "invite as new" fallback never
+    /// offers to add someone who's already invited (a duplicate row).
+    private var invitedNames: Set<String> {
+        Set(store.attendees.map { a -> String in
+            let name = a.memberID.flatMap { mid in family.members.first { $0.id == mid }?.name } ?? a.name ?? ""
+            return name.trimmingCharacters(in: .whitespaces).lowercased()
+        })
+    }
+
     private func addNew(_ name: String) {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
@@ -198,11 +217,15 @@ private struct AddAttendeeSheet: View {
                             }
                         }
                     }
-                    // No match → offer to invite the typed name as a new guest.
+                    // No match → offer to invite the typed name as a new guest,
+                    // unless that name is already on the guest list (avoid a dup).
                     if candidates.isEmpty {
                         let q = query.trimmingCharacters(in: .whitespaces)
                         if q.isEmpty {
                             Text("No people yet.").foregroundStyle(.secondary)
+                        } else if invitedNames.contains(q.lowercased()) {
+                            Label("“\(q)” is already invited", systemImage: "checkmark.circle")
+                                .foregroundStyle(.secondary)
                         } else {
                             Button {
                                 addNew(q)

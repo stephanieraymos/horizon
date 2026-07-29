@@ -158,23 +158,36 @@ private struct AddAttendeeSheet: View {
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
+    @State private var query = ""
+
+    /// People not already invited, filtered by the search field.
+    private var candidates: [FamilyMember] {
+        let available = family.members.filter { !existingMemberIDs.contains($0.id) }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return available }
+        return available.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    private func addNew(_ name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        Task { await store.add(tripID: tripID, familyID: familyID, memberID: nil, name: n); dismiss() }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Add someone new") {
-                    HStack {
-                        TextField("Name", text: $newName)
-                        Button("Add") {
-                            let n = newName.trimmingCharacters(in: .whitespaces)
-                            guard !n.isEmpty else { return }
-                            Task { await store.add(tripID: tripID, familyID: familyID, memberID: nil, name: n); dismiss() }
+                if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Section("Add someone new") {
+                        HStack {
+                            TextField("Name", text: $newName)
+                            Button("Add") { addNew(newName) }
+                                .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
                 Section("From people") {
-                    ForEach(family.members.filter { !existingMemberIDs.contains($0.id) }) { m in
+                    ForEach(candidates) { m in
                         Button {
                             Task { await store.add(tripID: tripID, familyID: familyID, memberID: m.id, name: m.name); dismiss() }
                         } label: {
@@ -185,8 +198,23 @@ private struct AddAttendeeSheet: View {
                             }
                         }
                     }
+                    // No match → offer to invite the typed name as a new guest.
+                    if candidates.isEmpty {
+                        let q = query.trimmingCharacters(in: .whitespaces)
+                        if q.isEmpty {
+                            Text("No people yet.").foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                addNew(q)
+                            } label: {
+                                Label("Invite “\(q)” as a new guest", systemImage: "person.badge.plus")
+                            }
+                        }
+                    }
                 }
             }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Search people")
             .navigationTitle("Add Guest")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }

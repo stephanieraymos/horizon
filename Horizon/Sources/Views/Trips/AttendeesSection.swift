@@ -20,20 +20,29 @@ final class AttendeesStore {
     /// typed-in traveler seeds by name.
     func load(tripID: UUID, familyID: UUID, seeds: [(memberID: UUID?, name: String)] = []) async {
         var rows = await fetch(tripID)
-        let haveMembers = Set(rows.compactMap { $0.memberID })
-        let haveNames = Set(rows.compactMap { $0.name })
-        var didSeed = false
-        for s in seeds {
-            if let mid = s.memberID {
-                if haveMembers.contains(mid) { continue }
-            } else if haveNames.contains(s.name) {
-                continue
+        // Seed from the plan's travelers ONLY on the first load (empty list) — a
+        // one-time trip→party carry-over. Re-seeding on every visit would
+        // resurrect guests the user deliberately removed (travelers persist on
+        // the trip), making removal of a traveler-guest impossible.
+        if rows.isEmpty, !seeds.isEmpty {
+            var seededMembers = Set<UUID>()
+            var seededNames = Set<String>()
+            for s in seeds {
+                let key = s.name.lowercased()
+                if let mid = s.memberID {
+                    // Skip if this person was already seeded by id OR by name
+                    // (an ad-hoc traveler with the same name), so no dup rows.
+                    if seededMembers.contains(mid) || seededNames.contains(key) { continue }
+                } else if seededNames.contains(key) {
+                    continue
+                }
+                _ = await add(tripID: tripID, familyID: familyID,
+                              memberID: s.memberID, name: s.memberID == nil ? s.name : nil)
+                if let mid = s.memberID { seededMembers.insert(mid) }
+                seededNames.insert(key)
             }
-            _ = await add(tripID: tripID, familyID: familyID,
-                          memberID: s.memberID, name: s.memberID == nil ? s.name : nil)
-            didSeed = true
+            rows = await fetch(tripID)
         }
-        if didSeed { rows = await fetch(tripID) }
         attendees = rows
     }
 
@@ -168,34 +177,57 @@ private struct AddAttendeeSheet: View {
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
+    @State private var query = ""
+
+    /// People not already invited, filtered by the search field.
+    private var candidates: [FamilyMember] {
+        let available = family.members.filter { !existingMemberIDs.contains($0.id) }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return available }
+        return available.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    /// Lowercased display names already on the guest list (roster members by
+    /// resolved name + ad-hoc typed names), so the "invite as new" fallback never
+    /// offers to add someone who's already invited (a duplicate row).
+    private var invitedNames: Set<String> {
+        Set(store.attendees.map { a -> String in
+            let name = a.memberID.flatMap { mid in family.members.first { $0.id == mid }?.name } ?? a.name ?? ""
+            return name.trimmingCharacters(in: .whitespaces).lowercased()
+        })
+    }
+
+    private func addNew(_ name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        Task {
+            // Back every new guest with a real shared `people` row (via
+            // FamilyStore → fam_family_members view → people) so they show up in
+            // Glade — never store a name-only attendee. Fall back to name-only
+            // only if the people insert fails, so the guest isn't lost.
+            let member = await family.createMember(name: n)
+            await store.add(tripID: tripID, familyID: familyID,
+                            memberID: member?.id, name: member == nil ? n : nil)
+            dismiss()
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Add someone new") {
-                    HStack {
-                        TextField("Name", text: $newName)
-                        Button("Add") {
-                            let n = newName.trimmingCharacters(in: .whitespaces)
-                            guard !n.isEmpty else { return }
-                            Task {
-                                // Back every new guest with a real shared `people`
-                                // row (via FamilyStore → fam_family_members view →
-                                // people) so they show up in Glade — never store a
-                                // name-only attendee. Fall back to name-only only if
-                                // the people insert fails, so the guest isn't lost.
-                                let member = await family.createMember(name: n)
-                                await store.add(tripID: tripID, familyID: familyID,
-                                                memberID: member?.id,
-                                                name: member == nil ? n : nil)
-                                dismiss()
-                            }
+                // Manual add hides while searching (the search results drive the
+                // "invite as new" path instead).
+                if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Section("Add someone new") {
+                        HStack {
+                            TextField("Name", text: $newName)
+                            Button("Add") { addNew(newName) }
+                                .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
                 Section("From people") {
-                    ForEach(family.members.filter { !existingMemberIDs.contains($0.id) }) { m in
+                    ForEach(candidates) { m in
                         Button {
                             Task { await store.add(tripID: tripID, familyID: familyID, memberID: m.id, name: m.name); dismiss() }
                         } label: {
@@ -206,8 +238,27 @@ private struct AddAttendeeSheet: View {
                             }
                         }
                     }
+                    // No match → offer to invite the typed name as a new guest,
+                    // unless that name is already on the guest list (avoid a dup).
+                    if candidates.isEmpty {
+                        let q = query.trimmingCharacters(in: .whitespaces)
+                        if q.isEmpty {
+                            Text("No people yet.").foregroundStyle(.secondary)
+                        } else if invitedNames.contains(q.lowercased()) {
+                            Label("“\(q)” is already invited", systemImage: "checkmark.circle")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                addNew(q)
+                            } label: {
+                                Label("Invite “\(q)” as a new guest", systemImage: "person.badge.plus")
+                            }
+                        }
+                    }
                 }
             }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Search people")
             .navigationTitle("Add Guest")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }

@@ -68,6 +68,7 @@ struct TripDetailView: View {
                 if current.kind.isTravel {
                     TripDocumentsSection(store: detail, familyID: current.familyID)
                 }
+                TripLinksSection(store: detail, kind: current.kind)
             }
             .padding()
         }

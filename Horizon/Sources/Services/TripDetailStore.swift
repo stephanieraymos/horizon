@@ -16,6 +16,7 @@ final class TripDetailStore {
     var documents: [TripDocument] = []
     var todos: [TripTodo] = []
     var tripPlaces: [TripPlace] = []
+    var links: [EventLink] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -33,6 +34,7 @@ final class TripDetailStore {
         async let docs = fetchDocuments()
         async let td = fetchTodos()
         async let tp = fetchTripPlaces()
+        async let lk = fetchLinks()
         reservations = await res
         itinerary = await days
         packing = await pack
@@ -41,7 +43,46 @@ final class TripDetailStore {
         documents = await docs
         todos = await td
         tripPlaces = await tp
+        links = await lk
         splits = await fetchSplits(for: loadedExpenses.map(\.id))
+    }
+
+    // MARK: Links (attached to the event/trip)
+
+    private func fetchLinks() async -> [EventLink] {
+        do {
+            return try await supabase.from("tm_links")
+                .select("id, trip_id, title, url, type")
+                .eq("trip_id", value: tripID)
+                .order("created_at", ascending: false)
+                .execute().value
+        } catch { return [] }
+    }
+
+    func addLink(title: String, url: String) async {
+        let cleanURL = url.trimmingCharacters(in: .whitespaces)
+        guard !cleanURL.isEmpty else { return }
+        struct NewLink: Encodable {
+            let user_id: String; let trip_id: String
+            let title: String; let url: String; let type: [String]
+        }
+        do {
+            guard let uid = try? await supabase.auth.session.user.id else { return }
+            let payload = NewLink(user_id: uid.uuidString.lowercased(),
+                                  trip_id: tripID.uuidString.lowercased(),
+                                  title: title.trimmingCharacters(in: .whitespaces),
+                                  url: cleanURL, type: ["event"])
+            let saved: EventLink = try await supabase.from("tm_links")
+                .insert(payload).select("id, trip_id, title, url, type").single().execute().value
+            links.insert(saved, at: 0)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func deleteLink(_ link: EventLink) async {
+        do {
+            try await supabase.from("tm_links").delete().eq("id", value: link.id).execute()
+            links.removeAll { $0.id == link.id }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     // MARK: Trip places (multiple destinations)

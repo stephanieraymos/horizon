@@ -18,6 +18,7 @@ struct EventsBoardView: View {
 
     // Trip sheets
     @State private var showNewTrip = false
+    @State private var newKind: PlanKind?
     @State private var manageSheet: ManageSheet?
     // Event sheets
     @State private var editing: FamilyEvent?
@@ -241,8 +242,14 @@ struct EventsBoardView: View {
                     }
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
-                            Button { showNewTrip = true } label: { Label("New Trip", systemImage: "airplane") }
+                            // Every plan kind, not just Trip — Party, Gathering,
+                            // Dinner, Celebration, Event all open the editor preset
+                            // to that kind.
+                            ForEach(PlanKind.allCases) { k in
+                                Button { newKind = k } label: { Label("New \(k.label)", systemImage: k.systemImage) }
+                            }
                             if canEdit {
+                                Divider()
                                 Button { isCreatingEvent = true } label: { Label("New Countdown", systemImage: "calendar.badge.plus") }
                             }
                         } label: { Image(systemName: "plus") }
@@ -257,6 +264,13 @@ struct EventsBoardView: View {
                 .sheet(isPresented: $showNewTrip) {
                     if let familyID = family.familyID {
                         TripEditView(trip: Trip(familyID: familyID, name: ""))
+                    } else {
+                        Text("Loading your family…").padding()
+                    }
+                }
+                .sheet(item: $newKind) { k in
+                    if let familyID = family.familyID {
+                        TripEditView(trip: Trip(familyID: familyID, name: "", kind: k))
                     } else {
                         Text("Loading your family…").padding()
                     }

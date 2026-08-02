@@ -48,10 +48,11 @@ struct TripEditView: View {
                     // text (find-or-create), so retyping/clearing can't leave a
                     // stale grouping and there's no create/save race.
                     ComboField(
-                        placeholder: "Search or add a destination",
+                        placeholder: "Search or add a \(draft.kind.locationLabel.lowercased())",
                         text: $destText,
                         options: destinationOptions,
-                        pickIcon: "mappin.and.ellipse")
+                        pickIcon: "mappin.and.ellipse",
+                        mapSearch: true)
                 } header: {
                     Text(draft.kind.locationLabel)
                 } footer: {

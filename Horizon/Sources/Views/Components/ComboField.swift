@@ -1,4 +1,42 @@
 import SwiftUI
+import MapKit
+
+/// Live map-place autocomplete backing for `ComboField` (opt-in via `mapSearch`).
+/// Wraps `MKLocalSearchCompleter` so typing a location surfaces real places.
+@MainActor
+final class MapSearchModel: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    /// A Sendable snapshot of a completion (MKLocalSearchCompletion isn't Sendable).
+    struct Place: Hashable { let title: String; let subtitle: String }
+
+    @Published var results: [Place] = []
+    private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+
+    func update(_ query: String) {
+        let t = query.trimmingCharacters(in: .whitespaces)
+        guard t.count >= 2 else { results = []; return }
+        completer.queryFragment = t
+    }
+
+    func clear() { results = []; completer.queryFragment = "" }
+
+    // MKLocalSearchCompleter always calls its delegate on the main thread.
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        MainActor.assumeIsolated {
+            // Use the stored completer (same object) so the non-Sendable parameter
+            // isn't captured across the isolation boundary.
+            self.results = self.completer.results.prefix(6).map { Place(title: $0.title, subtitle: $0.subtitle) }
+        }
+    }
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        MainActor.assumeIsolated { self.results = [] }
+    }
+}
 
 /// Reusable type-to-search field: a text field plus live-filtered suggestion
 /// rows and an "Add …" row at the bottom — the combobox pattern used across the
@@ -17,10 +55,14 @@ struct ComboField: View {
     var options: [Option]
     var allowAdd: Bool = true
     var pickIcon: String = "magnifyingglass"
+    /// When true, live map-place suggestions (MapKit) are merged in below the
+    /// saved options, so typing surfaces real destinations/addresses.
+    var mapSearch: Bool = false
     var onPick: (Option) -> Void = { _ in }
     var onAdd: (String) -> Void = { _ in }
 
     @FocusState private var focused: Bool
+    @StateObject private var mapModel = MapSearchModel()
     /// Mirrors focus but lingers briefly after focus loss so a tap on a suggestion
     /// still registers before the list collapses (the tap-drop gotcha).
     @State private var active = false
@@ -68,6 +110,11 @@ struct ComboField: View {
                     }
                 }
             }
+            .onChange(of: text) { _, q in
+                // Only while the user is actively typing — avoids repopulating
+                // suggestions right after a pick sets the text programmatically.
+                if mapSearch, focused { mapModel.update(q) }
+            }
 
         ForEach(matches) { opt in
             Button { pick(opt) } label: {
@@ -92,6 +139,32 @@ struct ComboField: View {
             .simultaneousGesture(TapGesture().onEnded { pick(opt) })
         }
 
+        // Live map places (opt-in). A saved option with the same name wins, so we
+        // hide a map row that duplicates one already shown above.
+        if mapSearch, focused || active {
+            let shownNames = Set(matches.map { $0.name.lowercased() })
+            let places = mapModel.results.filter { !shownNames.contains($0.title.lowercased()) }
+            ForEach(Array(places.enumerated()), id: \.offset) { _, place in
+                Button { pickMap(place) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundStyle(Theme.Colors.brand).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(place.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            if !place.subtitle.isEmpty {
+                                Text(place.subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.left").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { pickMap(place) })
+            }
+        }
+
         if showAdd {
             Button { add() } label: {
                 Label("Add \u{201C}\(trimmed)\u{201D}", systemImage: "plus.circle.fill")
@@ -100,6 +173,18 @@ struct ComboField: View {
             }
             .simultaneousGesture(TapGesture().onEnded { add() })
         }
+    }
+
+    /// Picking a live map place fills the field with its name and treats it as a
+    /// new value (find-or-create), matching the "Add …" flow.
+    private func pickMap(_ place: MapSearchModel.Place) {
+        let value = place.title.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return }
+        addedValue = value
+        text = value
+        mapModel.clear()
+        onAdd(value)
+        focused = false
     }
 
     private func pick(_ opt: Option) {

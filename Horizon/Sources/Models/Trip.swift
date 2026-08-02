@@ -3,8 +3,10 @@ import Foundation
 /// What kind of plan a `fam_trips` row represents. Defaults to `.trip`, so the
 /// same rich planner (places, people, reservations, countdown) backs parties and
 /// gatherings too — with travel-specific labels swapped out for non-trips.
-enum PlanKind: String, Codable, CaseIterable, Hashable {
+enum PlanKind: String, Codable, CaseIterable, Hashable, Identifiable {
     case trip, party, gathering, dinner, celebration, other
+
+    var id: String { rawValue }
 
     var label: String {
         switch self {

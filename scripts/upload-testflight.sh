@@ -146,3 +146,12 @@ fi
 echo ""
 echo "✅ Upload complete. Build $BUILD_NUMBER will appear in App Store Connect"
 echo "   → TestFlight in 5–10 minutes after processing."
+
+# --- Persist the version bump (auto-commit project.yml after a successful ship) ---
+if ! git diff --quiet project.yml 2>/dev/null; then
+  git add project.yml \
+    && git commit -q -m "chore: release v${NEW_VER} (build ${BUILD_NUMBER})" \
+    && echo "▶  Committed version bump → v${NEW_VER}" \
+    || echo "⚠️  Couldn't commit the version bump — commit project.yml manually."
+fi
+# ---------------------------------------------------------------------------------

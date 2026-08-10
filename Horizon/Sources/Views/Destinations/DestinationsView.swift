@@ -141,8 +141,12 @@ private struct DestinationDetailView: View {
         .onChange(of: coverItem) { _, item in
             guard let item, let fid = family.familyID else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    await trips.setDestinationCover(id: current.id, familyID: fid, imageData: data)
+                // Downscale + re-encode to JPEG first. setDestinationCover writes a
+                // .jpg path with an image/jpeg content type, so uploading the raw
+                // picker bytes stored a full-res HEIC mislabelled as JPEG — a banner
+                // that may not render, and a multi-megabyte re-download per viewer.
+                if let jpeg = await item.loadUploadJPEG() {
+                    await trips.setDestinationCover(id: current.id, familyID: fid, imageData: jpeg)
                 }
                 coverItem = nil
             }

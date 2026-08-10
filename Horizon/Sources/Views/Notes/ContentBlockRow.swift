@@ -482,15 +482,15 @@ private struct ImageBlockView: View {
             guard let item else { return }
             Task {
                 errorText = nil
-                do {
-                    if let data = try await item.loadTransferable(type: Data.self) {
-                        await store(data, name: "photo-\(Int(Date().timeIntervalSince1970)).jpg",
-                                     type: "image/jpeg")
-                    } else {
-                        errorText = "Couldn't read that photo. Try a different one."
-                    }
-                } catch {
-                    errorText = "Couldn't load photo: \(error.localizedDescription)"
+                // Downscale + re-encode before upload. Sending the raw picker bytes
+                // uploaded full-res HEIC under a .jpg/image-jpeg label — a broken
+                // content type on the object AND multi-MB of Storage egress every
+                // time the note is opened on another device.
+                if let jpeg = await item.loadUploadJPEG() {
+                    await store(jpeg, name: "photo-\(Int(Date().timeIntervalSince1970)).jpg",
+                                 type: "image/jpeg")
+                } else {
+                    errorText = "Couldn't read that photo. Try a different one."
                 }
                 photoItem = nil
             }

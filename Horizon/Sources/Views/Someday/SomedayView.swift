@@ -13,7 +13,12 @@ struct SomedayView: View {
     // Bare root — AppShell owns this tab's NavigationStack.
     var body: some View {
         Group {
-            if trips.somedayTrips.isEmpty && trips.wishlistDestinations.isEmpty {
+            // Before the first load finishes, "Nothing on the list yet" is a lie —
+            // tab order is user-customizable, so Someday can be the first tab shown
+            // and TripsStore may not have loaded at all yet.
+            if !trips.hasLoaded && trips.somedayTrips.isEmpty && trips.wishlistDestinations.isEmpty {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if trips.somedayTrips.isEmpty && trips.wishlistDestinations.isEmpty {
                     ContentUnavailableView {
                         Label("Nothing on the list yet", systemImage: "map")
                     } description: {
@@ -51,6 +56,9 @@ struct SomedayView: View {
                     } label: { Image(systemName: "plus") }
                 }
             }
+            // This tab never loaded its own data — it relied on Home/Events being
+            // visited first. Opening Someday first showed an empty bucket list.
+            .task { if !trips.hasLoaded { await trips.load() } }
             .refreshable { await trips.load() }
             .sheet(isPresented: $showAddWishlist) {
                 if let familyID = family.familyID {

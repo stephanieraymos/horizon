@@ -646,22 +646,25 @@ final class TripDetailStore {
             PackingItem(tripID: newTripID, memberID: $0.memberID, item: $0.item,
                         checked: false, autoSuggested: $0.autoSuggested, category: $0.category)
         }
-        if !newPacking.isEmpty { try? await supabase.from("fam_trip_packing").insert(newPacking).execute() }
-
         let newShopping = shoppingItems.map {
             Expense(tripID: newTripID, category: $0.category, description: $0.description,
                     amount: $0.amount, status: .notPurchased, tag: $0.tag, link: $0.link,
                     purchasedFrom: $0.purchasedFrom, notes: $0.notes)
         }
-        if !newShopping.isEmpty { try? await supabase.from("fam_trip_expenses").insert(newShopping).execute() }
-
         let newDays = itinerary.map { day -> ItineraryDay in
             ItineraryDay(tripID: newTripID, dayDate: day.dayDate,
                          activities: day.activities.map { act in
                              var a = act; a.id = UUID(); a.done = false; return a
                          })
         }
-        if !newDays.isEmpty { try? await supabase.from("fam_trip_itinerary").insert(newDays).execute() }
+        // These were `try?`, which reported a successful duplicate while copying
+        // nothing — an RLS or decode failure left the new trip silently empty and
+        // the user with no idea why. Surface it instead.
+        do {
+            if !newPacking.isEmpty { try await supabase.from("fam_trip_packing").insert(newPacking).execute() }
+            if !newShopping.isEmpty { try await supabase.from("fam_trip_expenses").insert(newShopping).execute() }
+            if !newDays.isEmpty { try await supabase.from("fam_trip_itinerary").insert(newDays).execute() }
+        } catch { errorMessage = "Couldn't copy everything over: \(error.localizedDescription)" }
     }
 
     /// Actual spend — purchased items only.

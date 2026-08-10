@@ -16,8 +16,10 @@ struct EventsBoardView: View {
     @State private var showArchived = false
     @State private var openTrip: Trip?
 
-    // Trip sheets
-    @State private var showNewTrip = false
+    // Trip sheets. One `newKind` sheet covers every plan kind (including Trip) —
+    // a second isPresented sheet for the Trip case was a duplicate presentation on
+    // an already sheet-heavy view, where stacked .sheet modifiers can shadow each
+    // other and leave a menu item opening nothing.
     @State private var newKind: PlanKind?
     @State private var manageSheet: ManageSheet?
     // Event sheets
@@ -261,13 +263,6 @@ struct EventsBoardView: View {
                     if events.events.isEmpty { await events.load() }
                     if family.members.isEmpty { await family.load() }
                 }
-                .sheet(isPresented: $showNewTrip) {
-                    if let familyID = family.familyID {
-                        TripEditView(trip: Trip(familyID: familyID, name: ""))
-                    } else {
-                        Text("Loading your family…").padding()
-                    }
-                }
                 .sheet(item: $newKind) { k in
                     if let familyID = family.familyID {
                         TripEditView(trip: Trip(familyID: familyID, name: "", kind: k))
@@ -302,8 +297,13 @@ struct EventsBoardView: View {
             } description: {
                 Text("Add a trip or a one-day event to start a countdown.")
             } actions: {
-                Button("New Trip") { showNewTrip = true }
+                // Mirror the toolbar "+" — this empty state was the last place that
+                // still offered only Trip + Countdown, which is exactly the
+                // "the + only gives me add trip / add countdown" complaint, and it's
+                // the screen a first-time user actually starts from.
+                Button("New Trip") { newKind = .trip }
                     .buttonStyle(.borderedProminent)
+                Button("New Party") { newKind = .party }
                 if canEdit {
                     Button("New Countdown") { isCreatingEvent = true }
                 }

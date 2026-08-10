@@ -74,7 +74,10 @@ struct TripDocumentsSection: View {
     private func handlePhoto(_ item: PhotosPickerItem?) async {
         guard let item else { return }
         uploading = true; defer { uploading = false; photoItem = nil }
-        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        // Downscale + re-encode first: the raw picker bytes are full-res HEIC, which
+        // we were storing under a .jpg name and image/jpeg content type (wrong type
+        // on the object, and megabytes of Storage egress on every thumbnail load).
+        guard let data = await item.loadUploadJPEG() else { return }
         let name = "photo-\(Int(Date().timeIntervalSince1970)).jpg"
         await store.addDocument(familyID: familyID, data: data, fileName: name,
                                 contentType: "image/jpeg", kind: .screenshot,

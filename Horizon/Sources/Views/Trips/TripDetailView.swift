@@ -464,7 +464,12 @@ struct TripDetailView: View {
     // MARK: Helpers
 
     private func duplicate() async {
+        // Carry the plan kind across: without it Trip's initializer defaults to
+        // .trip, so "Duplicate party" produced a *trip* — travel-only sections
+        // (packing, passports, transportation) came back and the RSVP guest list
+        // silently became the travelers strip.
         let copy = Trip(familyID: current.familyID, name: current.name + " (copy)",
+                        kind: current.kind,
                         destination: current.destination, destinationID: current.destinationID,
                         travelers: current.travelers, transportation: current.transportation,
                         status: .planning, budget: current.budget, placeID: current.placeID)

@@ -1,5 +1,25 @@
 # Horizon — trips
 
+**This file is the repo-local layer: build commands and the traps already paid for
+in this code. It is loaded automatically. It is NOT the project documentation.**
+
+## Read these before you start, and write back to them as you finish
+
+| Document | Path |
+| :-- | :-- |
+| Workstation brief — architecture, features, design rules | `Cowork OS/Projects/Horizon/CLAUDE.md` |
+| Living status — current state, decisions, backlog | `Cowork OS/Projects/Horizon/MEMORY.md` |
+| Plan — phases and rationale, where one exists | `Cowork OS/Projects/Horizon/plan.md` |
+
+**Update MEMORY.md as each piece of work finishes, not at the end of the session.**
+An interrupted session takes undocumented work with it, and the next one starts from
+a status line that is already wrong. Write the entry the moment a feature lands or a
+decision is made, keep `*Last updated:*` current, and correct the workstation
+CLAUDE.md whenever it and the code disagree — the code is the truth, the doc is what
+the next session reads.
+
+`Cowork OS` = `~/Library/Mobile Documents/com~apple~CloudDocs/Cowork OS`.
+
 ## Pending: adopt shared work-day tracking
 
 `work_days` and `leave_allowances` (family Supabase `ihvljgwfslxorxsorzpi`) record

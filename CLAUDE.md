@@ -50,3 +50,14 @@ read off the payroll system. `WorkDaysStore.projections` replays it week by week
 — accrual pauses at the cap and resumes below it, and spending is applied before
 accruing so a day taken mid-week frees room under the cap. Don't reimplement this
 as `anchor + rate × weeks − used`; that overstates the balance near the cap.
+
+## Split-view detail identity (2026-09-11)
+
+`TripDetailView` owns a whole `TripDetailStore` plus edit/reservation/cover-photo
+state seeded from the trip at init. Hosted in `EventsBoardView`'s split-view
+detail column with no `.id()`, switching trips left the previous trip's entire
+detail (and any in-flight edit) on screen under the newly selected trip. Fixed
+with `.id(trip.id)` at the call site. `NotesTabView`'s equivalent split already
+had this right (`.id(note.id)`, with its own comment) — match that pattern for
+any new split-view detail screen. See `~/.claude/CLAUDE.md`'s "SwiftUI
+conventions" section for the general shape of this trap.

@@ -39,6 +39,8 @@ packages:
     from: "2.20.0"
   AppShellKit:
     path: ../AppShellKit
+  DuoKit:
+    path: ../DuoKit
 
 targets:
   Horizon:
@@ -73,3 +75,6 @@ targets:
         product: Supabase
       - package: AppShellKit
         product: AppShellKit
+      - package: DuoKit
+        product: DuoKit
+

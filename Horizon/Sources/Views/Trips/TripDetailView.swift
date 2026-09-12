@@ -71,6 +71,12 @@ struct TripDetailView: View {
                 TripLinksSection(store: detail, kind: current.kind)
             }
             .padding()
+            // Readable width on iPad/regular: cap the column instead of letting
+            // every section (cards, forms, text) stretch edge-to-edge. Centered,
+            // so on a full-screen iPad split-view detail pane the trip reads like
+            // a document, not a phone screen pulled wide.
+            .frame(maxWidth: 672)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle(current.name)
         #if !targetEnvironment(macCatalyst)

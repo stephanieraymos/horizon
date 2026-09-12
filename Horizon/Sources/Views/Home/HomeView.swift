@@ -50,6 +50,12 @@ struct HomeView: View {
                     }
                 }
                 .padding()
+                // Readable width on iPad/regular: the dashboard is a column of
+                // cards, not a form, but letting it stretch to a 13" iPad's full
+                // width reads as an iPhone screen pulled wide rather than a
+                // restructured layout. Cap and center instead.
+                .frame(maxWidth: 672)
+                .frame(maxWidth: .infinity)
             }
             .navigationTitle(greeting)
             .toolbar {

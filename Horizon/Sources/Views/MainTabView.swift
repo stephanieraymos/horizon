@@ -11,6 +11,12 @@ enum HorizonTab: String, CaseIterable, ShellTab {
 
     var id: String { rawValue }
 
+    /// Events owns its own navigation container: on regular×regular (iPad,
+    /// Split View, the Duo's inner display) it's a NavigationSplitView — trip
+    /// list beside trip detail — instead of AppShell's default single-column
+    /// NavigationStack push. See `EventsBoardView`.
+    var ownsNavigation: Bool { self == .events }
+
     var title: String {
         switch self {
         case .home:    "Home"

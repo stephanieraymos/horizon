@@ -1,14 +1,22 @@
 import SwiftUI
+import DuoKit
 
 /// The unified "Events" board — trips and one-day countdowns in one place, with a
 /// simple All / Trips / Events filter. Replaces the old separate "Trips" and
 /// "Countdown" tabs. Member birthdays are synthesized in-memory from
 /// `fam_family_members.birthday` (never persisted); trips and events are sorted
 /// together by how soon they are.
+///
+/// Owns its own navigation (`HorizonTab.ownsNavigation`) so it can be a real
+/// NavigationSplitView on regular×regular — trip/event list beside trip detail —
+/// rather than AppShell's default single-column push, which on a wide screen
+/// would just replace the list with the detail in place (an iPhone push, wider).
 struct EventsBoardView: View {
     @Environment(TripsStore.self) private var trips
     @Environment(EventsStore.self) private var events
     @Environment(FamilyStore.self) private var family
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var search = ""
     @State private var typeFilter: TypeFilter = .all
@@ -56,6 +64,12 @@ struct EventsBoardView: View {
     private var canEdit: Bool { family.currentMember?.role == .admin }
     private var showsTrips: Bool { typeFilter != .countdowns }
     private var showsEvents: Bool { typeFilter != .trips }
+
+    /// iPad/Split-View/the Duo's inner display — same check AppShellKit uses to
+    /// decide sidebar vs. tab bar. Reused here for the inner list↔detail split.
+    private var isRegularWidth: Bool {
+        DuoDisplay.isInnerDisplay(horizontal: horizontalSizeClass, vertical: verticalSizeClass)
+    }
 
     // MARK: - Matching (search + status)
 
@@ -206,19 +220,73 @@ struct EventsBoardView: View {
         trips.trips.isEmpty && events.events.isEmpty && birthdayEvents.isEmpty
     }
 
-    // AppShell owns this tab's NavigationStack; the root is bare. Both event taps
-    // (which open a linked trip programmatically) and trip-row taps push onto the
-    // shell's stack — the former via `openTrip` + .navigationDestination(item:),
-    // the latter via TripRow's destination-based NavigationLink.
+    // This tab owns its own navigation container (HorizonTab.ownsNavigation),
+    // so AppShell never wraps it: regular×regular gets a real NavigationSplitView
+    // (list beside detail); everything narrower keeps the familiar push. Both
+    // shapes share `openTrip` as the "current trip" — a push destination in the
+    // stack, a selection in the split view — and both event taps (opening a
+    // linked trip) and trip-row taps just set it.
     var body: some View {
+        Group {
+            if isRegularWidth {
+                NavigationSplitView {
+                    contentColumn
+                } detail: {
+                    if let trip = openTrip {
+                        // TripDetailView owns a whole TripDetailStore plus edit/
+                        // reservation/cover-photo state seeded from `trip` at
+                        // init — without `.id()` switching trips in the list
+                        // would leave the previous trip's entire detail (and
+                        // its in-flight edits) on screen under the new one's
+                        // selected row.
+                        TripDetailView(trip: trip)
+                            .id(trip.id)
+                    } else {
+                        ContentUnavailableView(
+                            "Select a trip or event",
+                            systemImage: "airplane",
+                            description: Text("Pick something from the list to see its details here."))
+                    }
+                }
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                NavigationStack {
+                    contentColumn
+                        .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+                }
+            }
+        }
+        .sheet(item: $newKind) { k in
+            if let familyID = family.familyID {
+                TripEditView(trip: Trip(familyID: familyID, name: "", kind: k))
+            } else {
+                Text("Loading your family…").padding()
+            }
+        }
+        .sheet(item: $manageSheet) { s in
+            NavigationStack {
+                switch s {
+                case .destinations: DestinationsView()
+                case .places: PlacesView()
+                }
+            }
+        }
+        .sheet(item: $editing) { EventEditView(existing: $0) }
+        .sheet(isPresented: $isCreatingEvent) { EventEditView(existing: nil) }
+        .sheet(item: $linkingEvent) { LinkTripSheet(event: $0) }
+        .eventActions(event: $makeEventFor,
+                      onOpenTrip: { openTrip = $0 },
+                      onLinkTrip: { linkingEvent = $0 },
+                      onEditCountdown: { editing = $0 })
+    }
+
+    /// The list column — filter picker, chips, and the Upcoming/Past/Not-going
+    /// sections. A NavigationStack root on iPhone; the sidebar column of a
+    /// NavigationSplitView on regular width.
+    private var contentColumn: some View {
         content
                 .navigationTitle("Events")
                 .searchable(text: $search, prompt: "Search trips & events")
-                .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
-                // Trip/party rows use value-based NavigationLink(value:), which
-                // needs a matching for:-destination — without it the row highlights
-                // but never pushes (the party-row "won't open" bug).
-                .navigationDestination(for: Trip.self) { TripDetailView(trip: $0) }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
@@ -263,28 +331,6 @@ struct EventsBoardView: View {
                     if events.events.isEmpty { await events.load() }
                     if family.members.isEmpty { await family.load() }
                 }
-                .sheet(item: $newKind) { k in
-                    if let familyID = family.familyID {
-                        TripEditView(trip: Trip(familyID: familyID, name: "", kind: k))
-                    } else {
-                        Text("Loading your family…").padding()
-                    }
-                }
-                .sheet(item: $manageSheet) { s in
-                    NavigationStack {
-                        switch s {
-                        case .destinations: DestinationsView()
-                        case .places: PlacesView()
-                        }
-                    }
-                }
-                .sheet(item: $editing) { EventEditView(existing: $0) }
-                .sheet(isPresented: $isCreatingEvent) { EventEditView(existing: nil) }
-                .sheet(item: $linkingEvent) { LinkTripSheet(event: $0) }
-                .eventActions(event: $makeEventFor,
-                              onOpenTrip: { openTrip = $0 },
-                              onLinkTrip: { linkingEvent = $0 },
-                              onEditCountdown: { editing = $0 })
     }
 
     @ViewBuilder
@@ -425,10 +471,28 @@ struct EventsBoardView: View {
         }
     }
 
+    // A plain Button + `openTrip` (rather than value-based NavigationLink) so the
+    // same tap works whether it's pushing a stack destination (compact) or just
+    // swapping the split view's detail column (regular) — see `body`.
     private func tripRow(_ trip: Trip) -> some View {
-        NavigationLink(value: trip) {
-            TripRowLabel(trip: trip)
+        Button {
+            openTrip = trip
+        } label: {
+            HStack(spacing: 6) {
+                TripRowLabel(trip: trip)
+                // A plain Button drops the disclosure chevron NavigationLink used
+                // to draw for free — restore it in push mode only; the split
+                // view's detail column IS the disclosure, so a chevron there
+                // would be a chevron to nowhere.
+                if !isRegularWidth {
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .listRowBackground(isRegularWidth && openTrip?.id == trip.id
+                            ? Theme.Colors.brand.opacity(0.12) : Color.clear)
         .swipeActions(edge: .trailing) {
             if trip.archived {
                 Button { Task { await restore(trip) } } label: {

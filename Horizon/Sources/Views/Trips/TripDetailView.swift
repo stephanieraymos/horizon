@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import AppShellKit
 
 struct TripDetailView: View {
     let trip: Trip
@@ -259,7 +260,7 @@ struct TripDetailView: View {
                     Label("Change", systemImage: "camera.fill")
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .glassSurface(in: Capsule(), fallback: .ultraThinMaterial)
                         .padding(10)
                 }
             }
@@ -289,7 +290,7 @@ struct TripDetailView: View {
                     Label("Reframe", systemImage: "crop")
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .glassSurface(in: Capsule(), interactive: true, fallback: .ultraThinMaterial)
                 }
                 .buttonStyle(.plain)
                 .padding(10)

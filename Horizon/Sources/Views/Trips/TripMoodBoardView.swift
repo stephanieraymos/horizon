@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import AppShellKit
 
 /// A trip's mood board: a photo collage backed by the trip's album. Photos are
 /// taggable on upload and attributed to the uploader; the board filters by both.
@@ -281,7 +282,7 @@ private struct MoodPhotoViewer: View {
                         .font(.subheadline)
                         .foregroundStyle(.white)
                         .padding(10)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .glassSurface(in: RoundedRectangle(cornerRadius: 10), fallback: .ultraThinMaterial)
                         .padding()
                 }
             }

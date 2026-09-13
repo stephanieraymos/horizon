@@ -9,6 +9,7 @@ struct TripDetailView: View {
     @Environment(TravelerProfilesStore.self) private var travelerProfiles
     @Environment(EventsStore.self) private var events
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var detail: TripDetailStore
     @State private var showEdit = false
@@ -38,45 +39,59 @@ struct TripDetailView: View {
             VStack(spacing: 20) {
                 coverBanner
                 header
-                // Trips keep the quick traveler avatars; parties/gatherings get a
-                // full RSVP guest list (invited → going/maybe/declined).
-                if current.kind.isTravel {
-                    travelersStrip
-                } else {
-                    AttendeesSection(tripID: current.id, familyID: current.familyID,
-                                     peopleLabel: current.kind.peopleLabel,
-                                     travelerNames: current.travelers ?? [])
+                // Three bands, in the order the trip has always read. On regular
+                // width with room for two phone-width columns, the plan (bookings
+                // + itinerary) gets its own column beside everything that
+                // describes the trip; anywhere narrower they stack A, B, C exactly
+                // as before. One set of views either way, so rotating or resizing
+                // never resets a section's state.
+                TripColumnsLayout(allowsColumns: horizontalSizeClass == .regular) {
+                    VStack(spacing: 20) {
+                        // Trips keep the quick traveler avatars; parties/gatherings get a
+                        // full RSVP guest list (invited → going/maybe/declined).
+                        if current.kind.isTravel {
+                            travelersStrip
+                        } else {
+                            AttendeesSection(tripID: current.id, familyID: current.familyID,
+                                             peopleLabel: current.kind.peopleLabel,
+                                             travelerNames: current.travelers ?? [])
+                        }
+                        if !passportWarnings.isEmpty { passportCallout }
+                        overview
+                        if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
+                        TripPlacesSection(store: detail, familyID: current.familyID)
+                        TripWeatherSection(
+                            trip: current,
+                            destinationName: trips.destination(for: current)?.name ?? current.destination,
+                            place: weatherPlace)
+                        if current.isSomeday { somedayCallout }
+                    }
+                    VStack(spacing: 20) {
+                        reservationsSection
+                        itinerarySection
+                    }
+                    VStack(spacing: 20) {
+                        notesSection
+                        TripTodosSection(store: detail, familyID: current.familyID, kind: current.kind)
+                        // Packing + travel Documents are trip-only — a party/gathering doesn't
+                        // pack a suitcase or need passports/boarding passes.
+                        if current.kind.isTravel {
+                            TripPackingSection(store: detail, trip: current)
+                        }
+                        TripMoneySection(store: detail, trip: current, familyID: current.familyID)
+                        if current.kind.isTravel {
+                            TripDocumentsSection(store: detail, familyID: current.familyID)
+                        }
+                        TripLinksSection(store: detail, kind: current.kind)
+                    }
                 }
-                if !passportWarnings.isEmpty { passportCallout }
-                overview
-                if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
-                TripPlacesSection(store: detail, familyID: current.familyID)
-                TripWeatherSection(
-                    trip: current,
-                    destinationName: trips.destination(for: current)?.name ?? current.destination,
-                    place: weatherPlace)
-                if current.isSomeday { somedayCallout }
-                reservationsSection
-                itinerarySection
-                notesSection
-                TripTodosSection(store: detail, familyID: current.familyID, kind: current.kind)
-                // Packing + travel Documents are trip-only — a party/gathering doesn't
-                // pack a suitcase or need passports/boarding passes.
-                if current.kind.isTravel {
-                    TripPackingSection(store: detail, trip: current)
-                }
-                TripMoneySection(store: detail, trip: current, familyID: current.familyID)
-                if current.kind.isTravel {
-                    TripDocumentsSection(store: detail, familyID: current.familyID)
-                }
-                TripLinksSection(store: detail, kind: current.kind)
             }
             .padding()
-            // Readable width on iPad/regular: cap the column instead of letting
-            // every section (cards, forms, text) stretch edge-to-edge. Centered,
-            // so on a full-screen iPad split-view detail pane the trip reads like
-            // a document, not a phone screen pulled wide.
-            .frame(maxWidth: 672)
+            // Readable width: one column is capped at 672 so the trip reads like a
+            // document, not a phone screen pulled wide. Two columns get a wider cap,
+            // still short of edge-to-edge on a 13" landscape iPad.
+            .frame(maxWidth: horizontalSizeClass == .regular ? TripColumnsLayout.wideMax
+                                                             : TripColumnsLayout.stackedMax)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(current.name)
@@ -88,9 +103,8 @@ struct TripDetailView: View {
                 Button {
                     showCapture = true
                 } label: {
-                    Image(systemName: "sparkles")
+                    Label("Quick add from text", systemImage: "sparkles")
                 }
-                .accessibilityLabel("Quick add from text")
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -122,7 +136,7 @@ struct TripDetailView: View {
                         }
                     }
                     Button("Delete trip", systemImage: "trash", role: .destructive) { confirmDelete = true }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Label("More", systemImage: "ellipsis.circle") }
             }
         }
         .task { await detail.load() }
@@ -559,6 +573,76 @@ struct TripDetailView: View {
             }
             .padding(.horizontal).padding(.vertical, 12)
             Divider().padding(.leading)
+        }
+    }
+}
+
+// MARK: - Layout
+
+/// Trip detail's three bands: A (who, where, weather), B (the plan: reservations +
+/// itinerary), C (notes, todos, packing, money, documents, links).
+///
+/// Stacked — a phone, or any column too narrow for two — they run A, B, C, the
+/// order the screen has always read in. Side by side, B sits in its own column
+/// beside A-over-C, so the itinerary is next to the details instead of below them.
+///
+/// The size class decides whether columns are WANTED (`allowsColumns`); the
+/// column minimum only decides whether they FIT in this particular pane. That
+/// second check is needed because a regular-width split-view detail pane can be
+/// as narrow as a phone (iPad portrait with the list showing, the Duo), and two
+/// 250pt columns of reservation cards would be worse than one.
+///
+/// A `Layout` rather than an if/else between two view trees: the same three
+/// subviews are only placed differently, so crossing the threshold (rotation,
+/// Stage Manager, the Duo folding) keeps every section's state.
+struct TripColumnsLayout: Layout {
+    var allowsColumns: Bool
+    var spacing: CGFloat = 20
+    /// Narrowest a column may be: a phone's content width.
+    var minColumn: CGFloat = 340
+
+    static let stackedMax: CGFloat = 672
+    static let wideMax: CGFloat = 1120
+
+    private func sideBySide(_ width: CGFloat) -> Bool {
+        allowsColumns && width >= minColumn * 2 + spacing
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let proposed = proposal.width ?? Self.stackedMax
+        let width = proposed.isFinite ? proposed : Self.stackedMax
+        if subviews.count == 3, sideBySide(width) {
+            let column = ProposedViewSize(width: (width - spacing) / 2, height: nil)
+            let left = subviews[0].sizeThatFits(column).height + spacing
+                + subviews[2].sizeThatFits(column).height
+            let right = subviews[1].sizeThatFits(column).height
+            return CGSize(width: width, height: max(left, right))
+        }
+        let column = ProposedViewSize(width: min(width, Self.stackedMax), height: nil)
+        let heights = subviews.map { $0.sizeThatFits(column).height }
+        return CGSize(width: width,
+                      height: heights.reduce(0, +) + spacing * CGFloat(max(heights.count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if subviews.count == 3, sideBySide(bounds.width) {
+            let w = (bounds.width - spacing) / 2
+            let column = ProposedViewSize(width: w, height: nil)
+            subviews[0].place(at: bounds.origin, anchor: .topLeading, proposal: column)
+            let aHeight = subviews[0].sizeThatFits(column).height
+            subviews[2].place(at: CGPoint(x: bounds.minX, y: bounds.minY + aHeight + spacing),
+                              anchor: .topLeading, proposal: column)
+            subviews[1].place(at: CGPoint(x: bounds.minX + w + spacing, y: bounds.minY),
+                              anchor: .topLeading, proposal: column)
+            return
+        }
+        let w = min(bounds.width, Self.stackedMax)
+        let column = ProposedViewSize(width: w, height: nil)
+        let x = bounds.minX + (bounds.width - w) / 2
+        var y = bounds.minY
+        for subview in subviews {
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: column)
+            y += subview.sizeThatFits(column).height + spacing
         }
     }
 }

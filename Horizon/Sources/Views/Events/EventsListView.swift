@@ -239,8 +239,16 @@ struct EventsBoardView: View {
                         // would leave the previous trip's entire detail (and
                         // its in-flight edits) on screen under the new one's
                         // selected row.
-                        TripDetailView(trip: trip)
-                            .id(trip.id)
+                        //
+                        // Its own NavigationStack so the trip's pushes (Notes,
+                        // packing, purchases) push inside the detail column, and
+                        // the `.id` is on the STACK so choosing another trip also
+                        // drops anything pushed for the previous one — otherwise
+                        // trip A's notes editor could stay up under trip B.
+                        NavigationStack {
+                            TripDetailView(trip: trip)
+                        }
+                        .id(trip.id)
                     } else {
                         ContentUnavailableView(
                             "Select a trip or event",
@@ -292,7 +300,7 @@ struct EventsBoardView: View {
                         Menu {
                             Button("Destinations", systemImage: "mappin.and.ellipse") { manageSheet = .destinations }
                             Button("Places", systemImage: "map") { manageSheet = .places }
-                        } label: { Image(systemName: "map") }
+                        } label: { Label("Destinations & Places", systemImage: "map") }
                     }
                     if showsTrips {
                         ToolbarItem(placement: .primaryAction) {
@@ -306,7 +314,8 @@ struct EventsBoardView: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: statusFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                Label("Filter by status",
+                                      systemImage: statusFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                             }
                         }
                     }
@@ -322,8 +331,7 @@ struct EventsBoardView: View {
                                 Divider()
                                 Button { isCreatingEvent = true } label: { Label("New Countdown", systemImage: "calendar.badge.plus") }
                             }
-                        } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Add")
+                        } label: { Label("Add", systemImage: "plus") }
                     }
                 }
                 .task {

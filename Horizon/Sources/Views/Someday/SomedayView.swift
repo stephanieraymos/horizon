@@ -53,7 +53,7 @@ struct SomedayView: View {
                     Menu {
                         Button("Someday trip", systemImage: "airplane") { newSomedayTrip = true }
                         Button("Wishlist place", systemImage: "mappin") { showAddWishlist = true }
-                    } label: { Image(systemName: "plus") }
+                    } label: { Label("Add", systemImage: "plus") }
                 }
             }
             // This tab never loaded its own data — it relied on Home/Events being

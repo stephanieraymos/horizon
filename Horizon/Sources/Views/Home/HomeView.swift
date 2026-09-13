@@ -64,7 +64,7 @@ struct HomeView: View {
                         Button { showNotes = true } label: { Label("Notes", systemImage: "note.text") }
                         Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Label("More", systemImage: "ellipsis.circle")
                     }
                 }
             }

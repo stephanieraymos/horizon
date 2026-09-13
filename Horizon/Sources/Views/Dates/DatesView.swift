@@ -47,7 +47,7 @@ struct DatesView: View {
             .navigationTitle("Dates")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { creating = true } label: { Image(systemName: "plus") }
+                    Button { creating = true } label: { Label("New date", systemImage: "plus") }
                 }
             }
             .task { if dates.dates.isEmpty { await dates.load() } }

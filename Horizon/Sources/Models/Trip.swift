@@ -39,6 +39,15 @@ enum PlanKind: String, Codable, CaseIterable, Hashable, Identifiable {
     var placesLabel: String   { isTravel ? "Places" : "Where" }
 }
 
+extension PlanKind {
+    /// What the "+" on a plan's bookings offers. A party or dinner was being offered
+    /// Flight, Lodging, Car, Train and Ferry first; existing bookings of any type
+    /// still show, this only shapes what's suggested.
+    var bookingTypes: [ReservationType] {
+        isTravel ? ReservationType.allCases : [.dining, .event, .activity, .themepark, .other]
+    }
+}
+
 enum TripStatus: String, Codable, CaseIterable, Hashable {
     case planning
     case booked
@@ -229,5 +238,29 @@ struct Trip: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(budget, forKey: .budget)
         try c.encodeIfPresent(placeID, forKey: .placeID)
         try c.encode(archived, forKey: .archived)
+    }
+}
+
+extension TripStatus {
+    /// The same four stored values, in words that fit the plan. "Booked", "In
+    /// Progress" and a departing airplane read wrong on a dinner or a party.
+    func label(for kind: PlanKind) -> String {
+        guard !kind.isTravel else { return label }
+        switch self {
+        case .planning:   return "Planning"
+        case .booked:     return "Confirmed"
+        case .inProgress: return "Happening"
+        case .done:       return "Done"
+        }
+    }
+
+    func systemImage(for kind: PlanKind) -> String {
+        guard !kind.isTravel else { return systemImage }
+        switch self {
+        case .planning:   return "pencil.and.list.clipboard"
+        case .booked:     return "checkmark.seal"
+        case .inProgress: return "sparkles"
+        case .done:       return "flag.checkered"
+        }
     }
 }

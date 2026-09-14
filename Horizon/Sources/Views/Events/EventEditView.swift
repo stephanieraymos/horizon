@@ -11,7 +11,7 @@ struct EventEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String = ""
-    @State private var eventType: String = FamilyEventType.vacation.rawValue
+    @State private var eventType: String = FamilyEventType.other.rawValue
     @State private var eventDate: Date = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
     @State private var isAnnual: Bool = false
     @State private var description: String = ""
@@ -19,7 +19,17 @@ struct EventEditView: View {
     @State private var selectedMembers: Set<String> = []
     @State private var isSaving = false
 
-    private var navTitle: String { existing == nil ? "New Date" : "Edit Date" }
+    // Was "New Date" / "Edit Date" — the same word as the Dates tab (date nights),
+    // for a screen that edits countdowns.
+    private var navTitle: String { existing == nil ? "New Countdown" : "Edit Countdown" }
+
+    /// Countdown types, plus the row's own type if it's a legacy one (Vacation,
+    /// Outing…) so opening an old row never silently changes its type.
+    private var pickerTypes: [String] {
+        var types = FamilyEventType.countdownTypes.map(\.rawValue)
+        if !types.contains(eventType) { types.append(eventType) }
+        return types
+    }
 
     /// Whether the selected type auto-repeats every year (birthday / anniversary).
     private var isAnnualType: Bool {
@@ -29,11 +39,11 @@ struct EventEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Event") {
-                    TextField("What's the event?", text: $title)
+                Section("Countdown") {
+                    TextField("What are you counting down to?", text: $title)
                     Picker("Type", selection: $eventType) {
-                        ForEach(FamilyEventType.allCases, id: \.self) { t in
-                            Text(t.rawValue).tag(t.rawValue)
+                        ForEach(pickerTypes, id: \.self) { t in
+                            Text(t).tag(t)
                         }
                     }
                     .onChange(of: eventType) { _, newType in
@@ -85,7 +95,7 @@ struct EventEditView: View {
 
                 if existing != nil {
                     Section {
-                        Button("Delete date", role: .destructive) {
+                        Button("Delete countdown", role: .destructive) {
                             if let existing {
                                 Task {
                                     await events.delete(existing)
@@ -125,7 +135,7 @@ struct EventEditView: View {
             return
         }
         title           = existing.title
-        eventType       = existing.eventType ?? FamilyEventType.vacation.rawValue
+        eventType       = existing.eventType ?? FamilyEventType.other.rawValue
         eventDate       = existing.eventDate
         isAnnual        = existing.isAnnual
         description     = existing.description ?? ""

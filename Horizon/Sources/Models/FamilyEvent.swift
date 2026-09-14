@@ -165,8 +165,28 @@ enum FamilyEventType: String, CaseIterable {
     case milestone   = "Milestone"
     case other       = "Other"
 
+    /// What the countdown editor offers for a NEW countdown. Vacation, Outing and
+    /// School Event are things you attend — plans — so they aren't offered; an
+    /// existing row that has one keeps it (see `EventEditView.pickerTypes`).
+    static var countdownTypes: [FamilyEventType] {
+        [.birthday, .anniversary, .holiday, .milestone, .other]
+    }
+
     /// Types that auto-repeat every year and benefit from start-year tracking.
     static var annualTypes: Set<String> {
         [birthday.rawValue, anniversary.rawValue]
+    }
+}
+
+extension FamilyEvent {
+    /// The row `EventsStore.syncCountdown` writes for a dated plan: a linked
+    /// one-off "Vacation". Anything else linked to a plan is a countdown the plan
+    /// was made FROM ("Plan a dinner" on the anniversary), which is hers.
+    ///
+    /// Heuristic: before 2026-09-13 the countdown editor defaulted to Vacation,
+    /// so a countdown she saved without changing the type and then planned a
+    /// trip around looks the same. None existed when this was written.
+    var isPlanCopy: Bool {
+        tripID != nil && eventType == FamilyEventType.vacation.rawValue && !isAnnual
     }
 }

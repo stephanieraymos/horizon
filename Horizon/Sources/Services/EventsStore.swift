@@ -40,6 +40,9 @@ final class EventsStore {
     }
 
     func load() async {
+        #if DEBUG
+        guard !DemoMode.isActive else { return }
+        #endif
         isLoading = true
         error = nil
         defer { isLoading = false }
@@ -135,6 +138,11 @@ final class EventsStore {
         }
     }
 
+    #if DEBUG
+    /// Demo mode only (`DemoMode`): replace the rows without a fetch.
+    func replaceForDemo(_ rows: [FamilyEvent]) { events = rows }
+    #endif
+
     // MARK: - Trip linking
 
     /// The (loaded) countdown linked to a trip, if any.
@@ -144,10 +152,9 @@ final class EventsStore {
 
     /// Sets or clears the trip link on an existing countdown.
     func linkTrip(_ event: FamilyEvent, tripID: UUID?) async {
-        struct P: Encodable { let trip_id: UUID? }
         do {
             try await supabase.from("fam_events")
-                .update(P(trip_id: tripID)).eq("id", value: event.id).execute()
+                .update(TripLinkPatch(trip_id: tripID)).eq("id", value: event.id).execute()
             if let i = events.firstIndex(where: { $0.id == event.id }) { events[i].tripID = tripID }
         } catch { self.error = error.localizedDescription }
     }
@@ -160,35 +167,72 @@ final class EventsStore {
                        departDate: Date?, createdBy: UUID?) async -> UUID? {
         guard let departDate else { return nil }
 
-        // Look for an existing linked countdown (query in case events aren't loaded).
-        let existing: FamilyEvent?
-        if let loaded = event(forTrip: tripID) {
-            existing = loaded
-        } else {
-            existing = try? await supabase.from("fam_events")
-                .select().eq("trip_id", value: tripID).limit(1).single().execute().value
+        // Every row linked to the plan (query in case events aren't loaded).
+        var linked = events.filter { $0.tripID == tripID }
+        if linked.isEmpty {
+            let fetched: [FamilyEvent]? = try? await supabase.from("fam_events")
+                .select().eq("trip_id", value: tripID).limit(10).execute().value
+            linked = fetched ?? []
         }
+        let copy = linked.first(where: \.isPlanCopy)
+
+        // A countdown the plan was made FROM ("Plan a dinner" on the anniversary)
+        // is hers and is never touched here — rewriting it turned an annual
+        // anniversary into a one-off "Vacation ✈️" named after the dinner. While
+        // it sits on the plan's day it already marks that day (Solstice's
+        // calendar reads these rows), so no copy is written; once the plan moves
+        // off it, the plan gets a copy of its own.
+        let cal = Calendar.current
+        let marked = linked.first { e in
+            !e.isPlanCopy && cal.isDate(e.isAnnual ? e.nextOccurrenceDate : e.eventDate,
+                                        inSameDayAs: departDate)
+        }
+        if copy == nil, let marked { return marked.id }
 
         await upsert(
-            id: existing?.id,
+            id: copy?.id,
             familyID: familyID,
             title: name,
             eventType: FamilyEventType.vacation.rawValue,
             eventDate: departDate,
             isAnnual: false,
-            description: existing?.description,
-            emoji: existing?.emoji ?? "✈️",
-            members: existing?.members,
+            description: copy?.description,
+            emoji: copy?.emoji ?? "✈️",
+            members: copy?.members,
             tripID: tripID,
-            createdBy: existing?.createdBy ?? createdBy)
-        return event(forTrip: tripID)?.id ?? existing?.id
+            createdBy: copy?.createdBy ?? createdBy)
+        return events.first { $0.tripID == tripID && $0.isPlanCopy }?.id ?? copy?.id
     }
 
-    /// Removes the countdown linked to a trip (used when the trip is deleted).
+    /// Removes the plan's own countdown copy (the plan was deleted or marked
+    /// "Not going") and UNLINKS any countdown the plan was made from, which is
+    /// hers and outlives the plan. This deleted every linked row, so marking the
+    /// anniversary dinner "Not going" deleted the anniversary.
     func deleteForTrip(_ tripID: UUID) async {
         do {
-            try await supabase.from("fam_events").delete().eq("trip_id", value: tripID).execute()
-            events.removeAll { $0.tripID == tripID }
+            try await supabase.from("fam_events").delete()
+                .eq("trip_id", value: tripID)
+                .eq("event_type", value: FamilyEventType.vacation.rawValue)
+                .eq("is_annual", value: false)
+                .execute()
+            try await supabase.from("fam_events")
+                .update(TripLinkPatch(trip_id: nil))
+                .eq("trip_id", value: tripID)
+                .execute()
+            events.removeAll { $0.tripID == tripID && $0.isPlanCopy }
+            for i in events.indices where events[i].tripID == tripID { events[i].tripID = nil }
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+/// `{"trip_id": …}` — with an explicit null when unlinking. A synthesized
+/// Encodable skips a nil optional entirely, so the old `P(trip_id: nil)` sent an
+/// empty update and "Unlink" never unlinked anything.
+private struct TripLinkPatch: Encodable {
+    let trip_id: UUID?
+    enum CodingKeys: String, CodingKey { case trip_id }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(trip_id, forKey: .trip_id)
     }
 }

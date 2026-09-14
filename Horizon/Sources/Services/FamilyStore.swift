@@ -14,6 +14,9 @@ final class FamilyStore {
     var familyID: UUID? { currentMember?.familyID }
 
     func load() async {
+        #if DEBUG
+        guard !DemoMode.isActive else { return }
+        #endif
         guard let userID = try? await supabase.auth.session.user.id else {
             currentMember = nil; members = []; return
         }

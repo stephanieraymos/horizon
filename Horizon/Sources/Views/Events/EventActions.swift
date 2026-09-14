@@ -32,12 +32,17 @@ struct EventActions: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog("Make from this date",
+            .confirmationDialog("Plan around this day",
                                 isPresented: Binding(get: { event != nil },
                                                      set: { if !$0 { event = nil } }),
                                 presenting: event) { ev in
-                Button("Just a countdown") {
-                    let e = ev; event = nil; creatingOneDayFrom = e
+                // Only for a People birthday, which has no row to edit: this makes
+                // it a real countdown (an emoji, a note). Offered on a real
+                // countdown it just made a second copy of the same countdown.
+                if isSynthetic(ev) {
+                    Button("Customize as a countdown") {
+                        let e = ev; event = nil; creatingOneDayFrom = e
+                    }
                 }
                 Button("Plan a party / gathering") {
                     let e = ev; event = nil; Task { await createTrip(from: e, kind: .party) }
@@ -57,7 +62,7 @@ struct EventActions: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { ev in
-                Text("Keep “\(ev.title)” as a simple countdown, or plan a party/gathering or a trip around it.")
+                Text("Plan a party, a gathering or a trip around “\(ev.title)”.")
             }
             .sheet(item: $creatingOneDayFrom) { ev in
                 EventEditView(existing: nil, prefillTitle: ev.title, prefillDate: seedDate(ev))

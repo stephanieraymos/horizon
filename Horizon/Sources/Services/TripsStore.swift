@@ -21,6 +21,9 @@ final class TripsStore {
     // MARK: Load
 
     func load() async {
+        #if DEBUG
+        guard !DemoMode.isActive else { return }
+        #endif
         isLoading = true
         defer { isLoading = false; hasLoaded = true }
         // Independent tables — fetch concurrently instead of one-after-another.

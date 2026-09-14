@@ -10,9 +10,12 @@ struct HomeView: View {
     @Environment(FamilyStore.self) private var family
     @Environment(DashboardStore.self) private var dashboard
     @AppStorage("notifications.enabled") private var notificationsEnabled = true
+    @AppStorage("events.showBirthdays") private var showBirthdays = true
+    @AppStorage("events.showHolidays") private var showHolidays = true
 
     @State private var openTrip: Trip?
     @State private var makeEventFor: FamilyEvent?
+    @State private var editingCountdown: FamilyEvent?
     @State private var showSettings = false
     @State private var showNotes = false
 
@@ -33,13 +36,8 @@ struct HomeView: View {
                     if !weekDates.isEmpty {
                         datesSection
                     }
-                    if !nextBirthdays.isEmpty {
-                        countdownSection("Birthdays", systemImage: "birthday.cake.fill",
-                                         tint: .pink, events: nextBirthdays)
-                    }
-                    if !nextEvents.isEmpty {
-                        countdownSection("Events", systemImage: "calendar.badge.clock",
-                                         tint: Theme.Colors.brand, events: nextEvents)
+                    if !comingUp.isEmpty {
+                        comingUpSection
                     }
                     if isEmpty {
                         ContentUnavailableView(
@@ -71,6 +69,7 @@ struct HomeView: View {
         .sheet(isPresented: $showNotes) { NotesTabView() }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+        .sheet(item: $editingCountdown) { EventEditView(existing: $0) }
         .eventActions(event: $makeEventFor, allowLinkEdit: false,
                       onOpenTrip: { openTrip = $0 })
         .task {
@@ -82,6 +81,7 @@ struct HomeView: View {
             await NotificationManager.sync(trips: trips.upcoming,
                                            reservations: dashboard.upcomingReservations,
                                            dates: dates.upcoming,
+                                           countdowns: allCountdowns,
                                            enabled: notificationsEnabled)
         }
         .refreshable {
@@ -104,23 +104,25 @@ struct HomeView: View {
         return dates.upcoming.filter { ($0.scheduledAt ?? .distantFuture) <= weekOut }
     }
 
-    /// Next two upcoming member birthdays (synthetic, built once in FamilyStore).
-    private var nextBirthdays: [FamilyEvent] {
-        family.birthdayEvents
-            .sorted { $0.daysAway < $1.daysAway }
-            .prefix(2).map { $0 }
+    /// Everything counting down — the same list the Countdowns tab shows.
+    private var allCountdowns: [Countdown] {
+        CountdownBuilder.build(
+            trips: trips.trips, events: events.events, birthdays: family.birthdayEvents,
+            destinationName: { trips.destination(for: $0)?.name ?? $0.destination?.nilIfBlank },
+            showBirthdays: showBirthdays, showHolidays: showHolidays)
     }
 
-    /// Next two upcoming non-birthday countdown events.
-    private var nextEvents: [FamilyEvent] {
-        events.upcoming
-            .filter { $0.eventType != FamilyEventType.birthday.rawValue }
-            .prefix(2).map { $0 }
+    /// The next four, minus the plan the hero card already shows. Replaces a
+    /// "Birthdays" card and an "Events" card that each showed two — and the
+    /// Events one was mostly the trip copies syncCountdown writes, so a trip in
+    /// the hero card also appeared underneath it.
+    private var comingUp: [Countdown] {
+        Array(allCountdowns.filter { $0.trip?.id == nil || $0.trip?.id != nextTrip?.id }.prefix(4))
     }
 
     private var isEmpty: Bool {
         nextTrip == nil && dashboard.upcomingReservations.isEmpty && weekDates.isEmpty
-            && nextBirthdays.isEmpty && nextEvents.isEmpty
+            && comingUp.isEmpty
     }
 
     // MARK: Cards
@@ -237,20 +239,20 @@ struct HomeView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func countdownSection(_ title: String, systemImage: String, tint: Color,
-                                  events: [FamilyEvent]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage).font(.headline).foregroundStyle(tint)
-            ForEach(events) { event in
-                if let tid = event.tripID, let trip = trips.trips.first(where: { $0.id == tid }) {
-                    Button { openTrip = trip } label: { countdownRow(event, chevron: true) }
-                        .buttonStyle(.plain)
-                } else if canEdit {
-                    Button { makeEventFor = event } label: { countdownRow(event, chevron: true) }
-                        .buttonStyle(.plain)
-                } else {
-                    countdownRow(event, chevron: false)
+    private var comingUpSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Coming up", systemImage: "hourglass")
+                    .font(.headline).foregroundStyle(Theme.Colors.brand)
+                Spacer()
+                NavigationLink { CountdownsView() } label: {
+                    Text("See all").font(.subheadline.weight(.medium))
                 }
+            }
+            ForEach(comingUp) { item in
+                Button { open(item) } label: { CountdownRow(item: item, showsChevron: true) }
+                    .buttonStyle(.plain)
+                if item.id != comingUp.last?.id { Divider() }
             }
         }
         .padding()
@@ -258,22 +260,13 @@ struct HomeView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func countdownRow(_ event: FamilyEvent, chevron: Bool) -> some View {
-        HStack(spacing: 12) {
-            if let emoji = event.emoji, !emoji.isEmpty {
-                Text(emoji).font(.system(size: 26))
-            } else {
-                Image(systemName: "calendar").font(.title3).foregroundStyle(.secondary).frame(width: 26)
-            }
-            Text(event.title).font(.subheadline.weight(.medium))
-            Spacer()
-            Text(event.daysAway == 0 ? "Today" : "\(event.daysAway)d")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(event.daysAway <= 7 ? .orange : .primary)
-            if chevron {
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-            }
+    /// A plan opens; a countdown opens its editor; a People birthday (no row of
+    /// its own) offers to plan something around it.
+    private func open(_ item: Countdown) {
+        switch item.source {
+        case .plan(let trip):     openTrip = trip
+        case .countdown(let e):   if canEdit { editingCountdown = e }
+        case .birthday(let e):    makeEventFor = e
         }
-        .padding(.vertical, 3)
     }
 }

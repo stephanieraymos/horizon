@@ -24,7 +24,8 @@ enum NotificationManager {
 
     /// Rebuilds all scheduled reminders from current data. Pass `enabled: false`
     /// to just clear everything.
-    static func sync(trips: [Trip], reservations: [Reservation], dates: [DateNight], enabled: Bool) async {
+    static func sync(trips: [Trip], reservations: [Reservation], dates: [DateNight],
+                     countdowns: [Countdown] = [], enabled: Bool) async {
         center.removeAllPendingNotificationRequests()
         guard enabled, await requestAuthorizationIfNeeded() else { return }
 
@@ -59,6 +60,8 @@ enum NotificationManager {
                      at: at6)
         }
 
+        scheduleCountdowns(countdowns, now: now)
+
         // Dates: 3 hours before the scheduled time.
         for date in dates where !date.ideaOnly {
             guard let when = date.scheduledAt,
@@ -70,6 +73,31 @@ enum NotificationManager {
                      title: "💕 \(date.title)",
                      body: body,
                      at: fire)
+        }
+    }
+
+    /// Countdowns and People birthdays. They never had reminders — only trips,
+    /// reservations and date nights did — so an anniversary counted down silently.
+    /// 9am on the day, plus a week's notice for birthdays and anniversaries (time
+    /// to plan or buy something). Plans are skipped: trips get their own reminder.
+    /// Only the next 60 days are scheduled, because iOS keeps at most 64 pending
+    /// requests per app and 15 birthdays twice over would crowd out the trips.
+    private static func scheduleCountdowns(_ countdowns: [Countdown], now: Date) {
+        let cal = Calendar.current
+        for item in countdowns where item.trip == nil && item.daysAway >= 0 && item.daysAway <= 60 {
+            let day = cal.startOfDay(for: item.date)
+            let title = "\(item.emoji ?? "⏳") \(item.title)"
+            if let at9 = cal.date(bySettingHour: 9, minute: 0, second: 0, of: day), at9 > now {
+                schedule(id: "cd-\(item.id)-0", title: title,
+                         body: item.detail.map { "\($0) — today" } ?? "It's today", at: at9)
+            }
+            let type = item.event?.eventType
+            guard type == FamilyEventType.birthday.rawValue || type == FamilyEventType.anniversary.rawValue,
+                  let weekBefore = cal.date(byAdding: .day, value: -7, to: day),
+                  let at9 = cal.date(bySettingHour: 9, minute: 0, second: 0, of: weekBefore),
+                  at9 > now else { continue }
+            schedule(id: "cd-\(item.id)-7", title: title,
+                     body: "One week away" + (item.detail.map { " — \($0)" } ?? ""), at: at9)
         }
     }
 

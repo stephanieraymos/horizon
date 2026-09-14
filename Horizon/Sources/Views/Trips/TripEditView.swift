@@ -62,7 +62,7 @@ struct TripEditView: View {
                 }
 
                 Section("Dates") {
-                    Toggle("Set dates", isOn: $hasDates.animation())
+                    Toggle(draft.kind.isTravel ? "Set dates" : "Set a date", isOn: $hasDates.animation())
                     if hasDates {
                         DatePicker(multiDay ? "Depart" : "Date", selection: $departDate,
                                    displayedComponents: .date)
@@ -80,7 +80,7 @@ struct TripEditView: View {
                 Section("Status") {
                     Picker("Status", selection: $draft.status) {
                         ForEach(TripStatus.allCases, id: \.self) { s in
-                            Label(s.label, systemImage: s.systemImage).tag(s)
+                            Label(s.label(for: draft.kind), systemImage: s.systemImage(for: draft.kind)).tag(s)
                         }
                     }
                 }

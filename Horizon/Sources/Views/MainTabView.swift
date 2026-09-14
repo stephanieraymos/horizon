@@ -7,7 +7,7 @@ import AppShellKit
 /// of its own) — that's what avoids the nested-stack "pushes behind" bug.
 enum HorizonTab: String, CaseIterable, ShellTab {
     // Events is the unified trips + countdowns board (replaces separate tabs).
-    case home, events, dates, someday, people
+    case home, countdowns, events, dates, someday, people
 
     var id: String { rawValue }
 
@@ -19,8 +19,11 @@ enum HorizonTab: String, CaseIterable, ShellTab {
 
     var title: String {
         switch self {
-        case .home:    "Home"
-        case .events:  "Events"
+        case .home:       "Home"
+        case .countdowns: "Countdowns"
+        // Trips, parties, dinners — the things you plan. "Events" beside a
+        // Countdowns tab would read as the same idea twice.
+        case .events:     "Plans"
         case .dates:   "Dates"
         case .someday: "Someday"
         case .people:  "People"
@@ -29,8 +32,9 @@ enum HorizonTab: String, CaseIterable, ShellTab {
 
     var systemImage: String {
         switch self {
-        case .home:    "house"
-        case .events:  "calendar"
+        case .home:       "house"
+        case .countdowns: "hourglass"
+        case .events:     "calendar"
         case .dates:   "heart"
         case .someday: "map"
         case .people:  "person.2"
@@ -38,8 +42,29 @@ enum HorizonTab: String, CaseIterable, ShellTab {
     }
 }
 
+/// A saved tab order predates Countdowns, and AppShell appends a tab a saved
+/// order doesn't know about at the END — past the 4-tab bar, into More, which for
+/// her is the same as not having it. So an order that has never seen
+/// "countdowns" gets it right after Home. Read-side only: once she saves an order
+/// that includes it (anywhere, More included) this leaves it exactly there.
+enum HorizonTabOrder {
+    nonisolated static func normalize(_ ids: [String]) -> [String] {
+        let known = Set(HorizonTab.allCases.map(\.rawValue))
+        var out: [String] = []
+        for id in ids where known.contains(id) && !out.contains(id) { out.append(id) }
+        guard !out.isEmpty else { return out }
+        let countdowns = HorizonTab.countdowns.rawValue
+        if !out.contains(countdowns) {
+            let afterHome = out.firstIndex(of: HorizonTab.home.rawValue).map { $0 + 1 } ?? 0
+            out.insert(countdowns, at: min(afterHome, out.count))
+        }
+        return out
+    }
+}
+
 struct MainTabView: View {
-    @State private var prefs = ShellPrefsStore(client: supabase, appKey: "horizon")
+    @State private var prefs = ShellPrefsStore(client: supabase, appKey: "horizon",
+                                               normalizeOrder: HorizonTabOrder.normalize)
 
     var body: some View {
         AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs) { tab in
@@ -50,8 +75,9 @@ struct MainTabView: View {
     @ViewBuilder
     private func root(for tab: HorizonTab) -> some View {
         switch tab {
-        case .home:    HomeView()
-        case .events:  EventsBoardView()
+        case .home:       HomeView()
+        case .countdowns: CountdownsView()
+        case .events:     EventsBoardView()
         case .dates:   DatesView()
         case .someday: SomedayView()
         case .people:  PeopleView()
@@ -89,11 +115,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Trip reminders", isOn: $notificationsEnabled)
+                    Toggle("Reminders", isOn: $notificationsEnabled)
                 } header: {
                     Text("Notifications")
                 } footer: {
-                    Text("Reminders to start packing, plus the night before a reservation and a heads-up before a date.")
+                    Text("Reminders to start packing, the night before a reservation, a heads-up before a date, and the morning of each countdown — plus a week’s notice for birthdays and anniversaries.")
                 }
                 Section("People") {
                     NavigationLink {

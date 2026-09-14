@@ -59,7 +59,7 @@ struct TripDetailView: View {
                         if !passportWarnings.isEmpty { passportCallout }
                         overview
                         if !mapEntries.isEmpty { TripMapView(entries: mapEntries) }
-                        TripPlacesSection(store: detail, familyID: current.familyID)
+                        TripPlacesSection(store: detail, familyID: current.familyID, isTravel: current.kind.isTravel)
                         TripWeatherSection(
                             trip: current,
                             destinationName: trips.destination(for: current)?.name ?? current.destination,
@@ -135,7 +135,7 @@ struct TripDetailView: View {
                             Task { await archive() }
                         }
                     }
-                    Button("Delete trip", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                    Button("Delete \(current.kind.label.lowercased())", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 } label: { Label("More", systemImage: "ellipsis.circle") }
             }
         }
@@ -174,7 +174,7 @@ struct TripDetailView: View {
                 Task { for r in list { await detail.saveReservation(r) } }
             })
         }
-        .confirmationDialog("Delete this trip?", isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmationDialog("Delete this \(current.kind.label.lowercased())?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Trip", role: .destructive) {
                 Task { await events.deleteForTrip(current.id); await trips.delete(current); dismiss() }
             }
@@ -349,7 +349,7 @@ struct TripDetailView: View {
     private var overview: some View {
         VStack(spacing: 0) {
             if let dest = destinationName { row(current.kind.locationLabel, dest, "mappin.and.ellipse") }
-            row("Status", current.status.label, current.status.systemImage)
+            row("Status", current.status.label(for: current.kind), current.status.systemImage(for: current.kind))
             if current.kind.isTravel, let transport = current.transportation?.nilIfBlank {
                 row("Transportation", transport, "car")
             }
@@ -362,13 +362,14 @@ struct TripDetailView: View {
 
     private var reservationsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Reservations") {
+            // "Bookings" for a party or dinner: venue, catering, tickets — not flights.
+            sectionHeader(current.kind.isTravel ? "Reservations" : "Bookings") {
                 Menu {
                     Button("Paste confirmation…", systemImage: "doc.on.clipboard") {
                         showPasteReservation = true
                     }
                     Divider()
-                    ForEach(ReservationType.allCases, id: \.self) { type in
+                    ForEach(current.kind.bookingTypes, id: \.self) { type in
                         Button(type.label, systemImage: type.systemImage) {
                             editingReservation = Reservation(familyID: current.familyID,
                                                              tripID: current.id, type: type)

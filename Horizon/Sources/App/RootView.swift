@@ -40,15 +40,29 @@ struct RootView: View {
     @Environment(EventsStore.self) private var events
     @Environment(DeepLinkRouter.self) private var deepLink
 
+    /// Debug-only: `-HorizonDemo` shows the app on sample data without signing in.
+    private var showsApp: Bool {
+        #if DEBUG
+        if DemoMode.isActive { return true }
+        #endif
+        return authStore.isSignedIn
+    }
+
     var body: some View {
         Group {
-            if authStore.isSignedIn {
+            if showsApp {
                 MainTabView()
             } else {
                 SignInView()
             }
         }
         .task(id: authStore.isSignedIn) {
+            #if DEBUG
+            if DemoMode.isActive {
+                DemoMode.seed(family: family, trips: trips, events: events)
+                return
+            }
+            #endif
             guard authStore.isSignedIn else { return }
             await family.load()
             await trips.load()

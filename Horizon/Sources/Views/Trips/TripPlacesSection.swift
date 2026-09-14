@@ -6,6 +6,8 @@ import SwiftUI
 struct TripPlacesSection: View {
     let store: TripDetailStore
     let familyID: UUID
+    /// A party's places are the venue and the bakery, not hotels and sights.
+    var isTravel: Bool = true
     @Environment(TripsStore.self) private var trips
 
     @State private var addingCategory: String?
@@ -33,7 +35,9 @@ struct TripPlacesSection: View {
             }
 
             if linked.isEmpty {
-                Text("Add the places you'll visit — hotels, restaurants, sights. Each links to a map location with an address.")
+                Text(isTravel
+                     ? "Add the places you'll visit — hotels, restaurants, sights. Each links to a map location with an address."
+                     : "Add the places for the day — the venue, a restaurant, a park. Each links to a map location with an address.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding().background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))

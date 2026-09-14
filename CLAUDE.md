@@ -61,3 +61,25 @@ with `.id(trip.id)` at the call site. `NotesTabView`'s equivalent split already
 had this right (`.id(note.id)`, with its own comment) — match that pattern for
 any new split-view detail screen. See `~/.claude/CLAUDE.md`'s "SwiftUI
 conventions" section for the general shape of this trap.
+
+## Countdowns: the plan is the countdown (2026-09-13)
+
+`EventsStore.syncCountdown` writes a hidden `fam_events` copy for every dated plan
+(linked, Vacation, not annual — `FamilyEvent.isPlanCopy`). Solstice's calendar reads
+those rows, so they stay; Horizon never displays them — `CountdownBuilder` shows the
+plan instead. A linked row that is NOT a copy is a countdown the plan was made from
+("Plan a dinner" on the anniversary) and belongs to her:
+
+- `syncCountdown` must never rewrite it (it used to — an annual anniversary became a
+  one-off "Vacation ✈️").
+- `deleteForTrip` deletes only the copy and unlinks the rest (it used to delete all).
+- Unlinking needs an explicit JSON null (`TripLinkPatch`); a synthesized Encodable
+  drops a nil optional and PostgREST gets an empty update that changes nothing.
+
+## Seeing past sign-in on a simulator
+
+Debug builds take `-HorizonDemo`: auth is skipped and `DemoMode.seed` fills the
+stores; `TripsStore` / `EventsStore` / `FamilyStore` `load()` return early while it's
+on, or the first refresh would wipe the sample data. Everything is `#if DEBUG`.
+`xcrun simctl launch <udid> com.stephanieraymos.horizon -HorizonDemo`
+

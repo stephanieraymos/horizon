@@ -14,6 +14,9 @@ struct TripEditView: View {
     @State private var departDate: Date
     @State private var returnDate: Date
     @State private var overnight: Bool
+    /// Set once she flips "Staying overnight" (or the plan already had its own
+    /// value). Until then the switch follows the plan's type.
+    @State private var overnightChosen: Bool
     @State private var budgetText: String
     @State private var destText: String
     @State private var travelers: [String]
@@ -27,6 +30,7 @@ struct TripEditView: View {
         _departDate = State(initialValue: depart ?? Date())
         _returnDate = State(initialValue: trip.returnDate ?? depart ?? Date())
         _overnight = State(initialValue: trip.staysOvernight)
+        _overnightChosen = State(initialValue: trip.overnight != nil)
         _budgetText = State(initialValue: trip.budget.map { String(Int($0)) } ?? "")
         _destText = State(initialValue: trip.destination ?? "")
         _travelers = State(initialValue: trip.travelers ?? [])
@@ -72,7 +76,12 @@ struct TripEditView: View {
                         if multiDay {
                             DatePicker(overnight ? "Return" : "Last day", selection: $returnDate,
                                        in: departDate..., displayedComponents: .date)
-                            Toggle("Staying overnight", isOn: $overnight.animation())
+                            Toggle("Staying overnight", isOn: Binding(
+                                get: { overnight },
+                                set: { newValue in
+                                    withAnimation { overnight = newValue }
+                                    overnightChosen = true
+                                }))
                         }
                     } else {
                         Label("Someday — no dates yet", systemImage: "sparkles")
@@ -81,7 +90,7 @@ struct TripEditView: View {
                 } header: {
                     Text("Dates")
                 } footer: {
-                    if hasDates && multiDay {
+                    if hasDates && multiDay && draftNights > 0 {
                         Text(overnight
                              ? "Counted in nights — \(draftNights) night\(draftNights == 1 ? "" : "s")."
                              : "Counted in days — \(draftNights + 1) days. For something you go to each day and come home from, like a festival.")
@@ -118,9 +127,20 @@ struct TripEditView: View {
                 }
             }
             .navigationTitle(isNew ? "New \(draft.kind.label)" : "Edit \(draft.kind.label)")
-            // A new plan's default follows its kind (a trip stays over, a party
-            // doesn't) until she sets it; an existing plan keeps what it has.
-            .onChange(of: draft.kind) { _, kind in if isNew { overnight = kind.isTravel } }
+            // The switch follows the plan's type (a trip stays over, a party
+            // doesn't) until she sets it herself.
+            .onChange(of: draft.kind) { _, kind in if !overnightChosen { overnight = kind.isTravel } }
+            // Multi-day starts with a real span, and moving the first day past the
+            // last drags the last day along — the picker's `in:` range doesn't move
+            // a date that's already set, which let a plan save ending before it began.
+            .onChange(of: multiDay) { _, on in
+                if on && returnDate <= departDate {
+                    returnDate = Calendar.current.date(byAdding: .day, value: 1, to: departDate) ?? departDate
+                }
+            }
+            .onChange(of: departDate) { _, start in
+                if returnDate < start { returnDate = start }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -146,7 +166,9 @@ struct TripEditView: View {
     private func save() async {
         draft.departDate = hasDates ? departDate : nil
         draft.returnDate = (hasDates && multiDay) ? returnDate : nil
-        draft.overnight = (hasDates && multiDay) ? overnight : nil
+        // Store only a choice that differs from the type's default, so a plan whose
+        // type changes later still gets the new type's default.
+        draft.overnight = (hasDates && multiDay && overnight != draft.kind.isTravel) ? overnight : nil
         // Reconcile the destination grouping from the final text: match an
         // existing destination (case-insensitive), else create it, else clear.
         if let name = destText.nilIfBlank {

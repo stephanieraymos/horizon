@@ -497,11 +497,13 @@ struct TripDetailView: View {
         // .trip, so "Duplicate party" produced a *trip* — travel-only sections
         // (packing, passports, transportation) came back and the RSVP guest list
         // silently became the travelers strip.
-        let copy = Trip(familyID: current.familyID, name: current.name + " (copy)",
+        var copy = Trip(familyID: current.familyID, name: current.name + " (copy)",
                         kind: current.kind,
                         destination: current.destination, destinationID: current.destinationID,
                         travelers: current.travelers, transportation: current.transportation,
                         status: .planning, budget: current.budget, placeID: current.placeID)
+        // Nights-or-days travels with the copy: next year's festival is a festival.
+        copy.overnight = current.overnight
         await trips.save(copy)
         await detail.copyReusableItems(to: copy.id)
         dismiss()

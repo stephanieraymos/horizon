@@ -86,9 +86,11 @@ enum CountdownBuilder {
             let d = days(to: depart)
             let end = t.returnDate.map { days(to: $0) }
             var parts: [String] = []
+            // Length before place: a long place name ("Discovery Park") truncated
+            // the row and hid "4 days", the part that says what kind of plan it is.
             if !t.kind.isTravel { parts.append(t.kind.label) }
+            if let length = t.lengthLabel { parts.append(length) }
             if let place = destinationName(t) { parts.append(place) }
-            if t.kind.isTravel, let n = t.nights, n > 0 { parts.append("\(n) night\(n == 1 ? "" : "s")") }
             out.append(Countdown(
                 id: "plan-\(t.id.uuidString)", source: .plan(t), title: t.name, date: depart,
                 emoji: nil, systemImage: t.kind.systemImage,

@@ -83,3 +83,24 @@ stores; `TripsStore` / `EventsStore` / `FamilyStore` `load()` return early while
 on, or the first refresh would wipe the sample data. Everything is `#if DEBUG`.
 `xcrun simctl launch <udid> com.stephanieraymos.horizon -HorizonDemo`
 
+## Nights vs days: `fam_trips.overnight` (2026-09-13)
+
+A multi-day plan is either a stay (count nights) or something she goes to each day
+and comes home from, like a festival (count days). `overnight` is nullable: NULL
+means "the kind's default" (a trip stays over, events don't), so every existing row
+kept showing exactly what it did. Show a plan's length only through
+`Trip.lengthLabel` ("3 nights" / "4 days"), never `nights` directly. Aftershock is a
+`trip` with `overnight = false`. `encode` always writes the key, so switching back
+clears it; older builds that don't send it leave the column untouched on upsert.
+
+## Cover banner: never layer a Button over a PhotosPicker
+
+Reframe used to float over a full-banner `PhotosPicker`, and on her phone taps
+on it opened the photo picker. The simulator did NOT reproduce this (the same
+build's Reframe opened Adjust Cover), so don't trust a simulator pass on overlapping
+hit targets. With a cover set, the photo is not a picker; Reframe (Button) and
+Change (PhotosPicker) are separate pills with nothing under either one.
+A helper `func` returning `some View` can't be called inside a `PhotosPicker`
+label closure under Swift 6 (non-Sendable result into a nonisolated context).
+Write the label inline.
+

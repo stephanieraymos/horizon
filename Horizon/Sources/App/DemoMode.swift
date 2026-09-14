@@ -38,13 +38,24 @@ enum DemoMode {
 
         let maui = Trip(familyID: familyID, name: "Maui", kind: .trip, destination: "Kaanapali, Maui",
                         departDate: day(12), returnDate: day(19),
-                        travelers: ["Stephanie", "Alex", "Oliver"], status: .booked)
+                        travelers: ["Stephanie", "Alex", "Oliver"],
+                        // A cover so the Change / Reframe pills render. It won't load
+                        // signed out; the pills only need the URL to be set.
+                        coverPhotoURL: "demo/maui.jpg", status: .booked)
         trips.trips = [
             maui,
             Trip(familyID: familyID, name: "Tahoe weekend", kind: .trip, destination: "South Lake Tahoe",
                  departDate: day(-1), returnDate: day(2), status: .inProgress),
             Trip(familyID: familyID, name: "Disneyland", kind: .trip, destination: "Anaheim",
                  departDate: day(38), returnDate: day(41), status: .planning),
+            {
+                // A festival she drives home from each night: 4 days, not 3 nights.
+                var fest = Trip(familyID: familyID, name: "Aftershock", kind: .trip,
+                                destination: "Discovery Park",
+                                departDate: day(18), returnDate: day(21), status: .planning)
+                fest.overnight = false
+                return fest
+            }(),
             Trip(familyID: familyID, name: "Oliver's 10th birthday party", kind: .party,
                  destination: "Backyard", departDate: day(9), travelers: ["Oliver"], status: .booked),
             Trip(familyID: familyID, name: "Omakase night", kind: .dinner,

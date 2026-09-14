@@ -13,6 +13,7 @@ struct TripEditView: View {
     @State private var multiDay: Bool
     @State private var departDate: Date
     @State private var returnDate: Date
+    @State private var overnight: Bool
     @State private var budgetText: String
     @State private var destText: String
     @State private var travelers: [String]
@@ -25,6 +26,7 @@ struct TripEditView: View {
         _multiDay = State(initialValue: trip.returnDate != nil)
         _departDate = State(initialValue: depart ?? Date())
         _returnDate = State(initialValue: trip.returnDate ?? depart ?? Date())
+        _overnight = State(initialValue: trip.staysOvernight)
         _budgetText = State(initialValue: trip.budget.map { String(Int($0)) } ?? "")
         _destText = State(initialValue: trip.destination ?? "")
         _travelers = State(initialValue: trip.travelers ?? [])
@@ -61,19 +63,28 @@ struct TripEditView: View {
                     }
                 }
 
-                Section("Dates") {
+                Section {
                     Toggle(draft.kind.isTravel ? "Set dates" : "Set a date", isOn: $hasDates.animation())
                     if hasDates {
-                        DatePicker(multiDay ? "Depart" : "Date", selection: $departDate,
-                                   displayedComponents: .date)
+                        DatePicker(!multiDay ? "Date" : (overnight ? "Depart" : "First day"),
+                                   selection: $departDate, displayedComponents: .date)
                         Toggle("Multi-day", isOn: $multiDay.animation())
                         if multiDay {
-                            DatePicker("Return", selection: $returnDate, in: departDate...,
-                                       displayedComponents: .date)
+                            DatePicker(overnight ? "Return" : "Last day", selection: $returnDate,
+                                       in: departDate..., displayedComponents: .date)
+                            Toggle("Staying overnight", isOn: $overnight.animation())
                         }
                     } else {
                         Label("Someday — no dates yet", systemImage: "sparkles")
                             .foregroundStyle(.secondary).font(.callout)
+                    }
+                } header: {
+                    Text("Dates")
+                } footer: {
+                    if hasDates && multiDay {
+                        Text(overnight
+                             ? "Counted in nights — \(draftNights) night\(draftNights == 1 ? "" : "s")."
+                             : "Counted in days — \(draftNights + 1) days. For something you go to each day and come home from, like a festival.")
                     }
                 }
 
@@ -107,6 +118,9 @@ struct TripEditView: View {
                 }
             }
             .navigationTitle(isNew ? "New \(draft.kind.label)" : "Edit \(draft.kind.label)")
+            // A new plan's default follows its kind (a trip stays over, a party
+            // doesn't) until she sets it; an existing plan keeps what it has.
+            .onChange(of: draft.kind) { _, kind in if isNew { overnight = kind.isTravel } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -125,9 +139,14 @@ struct TripEditView: View {
         }
     }
 
+    private var draftNights: Int {
+        max(0, Calendar.current.dateComponents([.day], from: departDate, to: returnDate).day ?? 0)
+    }
+
     private func save() async {
         draft.departDate = hasDates ? departDate : nil
         draft.returnDate = (hasDates && multiDay) ? returnDate : nil
+        draft.overnight = (hasDates && multiDay) ? overnight : nil
         // Reconcile the destination grouping from the final text: match an
         // existing destination (case-insensitive), else create it, else clear.
         if let name = destText.nilIfBlank {

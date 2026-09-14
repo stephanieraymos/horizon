@@ -249,37 +249,58 @@ struct TripDetailView: View {
 
     // MARK: Header + overview
 
+    // With a cover set, the photo itself is NOT a picker: Reframe and Change are
+    // two separate pills with nothing layered under either. Reframe used to float
+    // over a full-banner PhotosPicker, and taps on it fell through to the picker —
+    // "Reframe opens the photo picker" (her report, 2026-09-13). Before there's a
+    // cover, the whole banner stays one big "Add cover photo" target.
     private var coverBanner: some View {
-        ZStack(alignment: .bottomLeading) {
-        PhotosPicker(selection: $coverItem, matching: .images) {
-            Group {
-                if current.coverPhotoURL?.nilIfBlank != nil {
-                    AdjustableCoverImage(cover: current.coverPhotoURL,
-                                         focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY)) {
-                        Color.secondary.opacity(0.12)
+        let hasCover = current.coverPhotoURL?.nilIfBlank != nil
+        return Group {
+            if hasCover {
+                AdjustableCoverImage(cover: current.coverPhotoURL,
+                                     focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY)) {
+                    Color.secondary.opacity(0.12)
+                }
+                .frame(height: 170)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(alignment: .bottom) {
+                    HStack {
+                        Button { showCoverCrop = true } label: {
+                            Label("Reframe", systemImage: "crop")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .glassSurface(in: Capsule(), fallback: .ultraThinMaterial)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                        PhotosPicker(selection: $coverItem, matching: .images) {
+                            Label("Change", systemImage: "camera.fill")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .glassSurface(in: Capsule(), fallback: .ultraThinMaterial)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
-                } else {
+                    .padding(10)
+                }
+            } else {
+                PhotosPicker(selection: $coverItem, matching: .images) {
                     ZStack {
                         LinearGradient(colors: [Theme.Colors.brand.opacity(0.35), Theme.Colors.brand.opacity(0.15)],
                                        startPoint: .top, endPoint: .bottom)
                         Label("Add cover photo", systemImage: "photo.badge.plus").foregroundStyle(.white)
                     }
+                    .frame(height: 170)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-            }
-            .frame(height: 170)
-            .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(alignment: .bottomTrailing) {
-                if current.coverPhotoURL?.nilIfBlank != nil {
-                    Label("Change", systemImage: "camera.fill")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .glassSurface(in: Capsule(), fallback: .ultraThinMaterial)
-                        .padding(10)
-                }
+                .buttonStyle(.plain)
             }
         }
-        .buttonStyle(.plain)
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             Task {
@@ -296,20 +317,6 @@ struct TripDetailView: View {
             get: { coverError != nil }, set: { if !$0 { coverError = nil } })) {
             Button("OK", role: .cancel) { coverError = nil }
         } message: { Text(coverError ?? "") }
-
-            // Reframe sits over the picker (the picker owns the tap = change photo),
-            // so repositioning is discoverable without burying it in the ⋯ menu.
-            if current.coverPhotoURL?.nilIfBlank != nil {
-                Button { showCoverCrop = true } label: {
-                    Label("Reframe", systemImage: "crop")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .glassSurface(in: Capsule(), interactive: true, fallback: .ultraThinMaterial)
-                }
-                .buttonStyle(.plain)
-                .padding(10)
-            }
-        }
     }
 
     private var header: some View {
@@ -319,8 +326,8 @@ struct TripDetailView: View {
                 .foregroundStyle(current.isSomeday ? .purple : Theme.Colors.brand)
             Text(TripFormat.dateRange(current.departDate, current.returnDate))
                 .font(.headline).foregroundStyle(.secondary)
-            if let nights = current.nights, nights > 0 {
-                Text("\(nights) night\(nights == 1 ? "" : "s")")
+            if let length = current.lengthLabel {
+                Text(length)
                     .font(.subheadline).foregroundStyle(.secondary)
             }
         }

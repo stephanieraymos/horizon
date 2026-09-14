@@ -105,6 +105,11 @@ struct Trip: Codable, Identifiable, Hashable {
     var coverFocusY: Double = 0.5
     /// Cached weather. Decode-only; saved via TripsStore.saveWeatherCache.
     var weatherCache: WeatherCache?
+    /// Multi-day plans: a stay (count nights) or something she goes to each day
+    /// and comes home from (count days). nil = the kind's default — trips stay
+    /// over, events don't. Aftershock is a "trip" to a festival she drives home
+    /// from every night: 4 days, not 3 nights.
+    var overnight: Bool?
 
     // MARK: Derived
 
@@ -131,6 +136,17 @@ struct Trip: Codable, Identifiable, Hashable {
     var nights: Int? {
         guard let a = departDate, let b = returnDate else { return nil }
         return Calendar.current.dateComponents([.day], from: a, to: b).day
+    }
+
+    /// Whether a multi-day plan counts nights (a stay) or days (go each day).
+    var staysOvernight: Bool { overnight ?? kind.isTravel }
+
+    /// "3 nights" for a stay, "4 days" for a plan she goes to each day and
+    /// comes home from; nil for a one-day plan.
+    var lengthLabel: String? {
+        guard let n = nights, n > 0 else { return nil }
+        if staysOvernight { return "\(n) night\(n == 1 ? "" : "s")" }
+        return "\(n + 1) days"
     }
 
     /// Short human countdown for lists and the detail header.
@@ -166,7 +182,7 @@ struct Trip: Codable, Identifiable, Hashable {
         case coverPhotoURL = "cover_photo_url"
         case transportation, status, budget
         case placeID = "place_id"
-        case archived
+        case archived, overnight
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -208,6 +224,7 @@ struct Trip: Codable, Identifiable, Hashable {
         budget        = try c.decodeIfPresent(Double.self, forKey: .budget)
         placeID       = try c.decodeIfPresent(UUID.self, forKey: .placeID)
         archived      = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
+        overnight     = try c.decodeIfPresent(Bool.self, forKey: .overnight)
         createdBy     = try c.decodeIfPresent(UUID.self, forKey: .createdBy)
         createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
@@ -238,6 +255,8 @@ struct Trip: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(budget, forKey: .budget)
         try c.encodeIfPresent(placeID, forKey: .placeID)
         try c.encode(archived, forKey: .archived)
+        // Always written (null = the kind's default), so switching back clears it.
+        try c.encode(overnight, forKey: .overnight)
     }
 }
 

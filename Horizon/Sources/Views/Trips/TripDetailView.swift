@@ -175,7 +175,7 @@ struct TripDetailView: View {
             })
         }
         .confirmationDialog("Delete this \(current.kind.label.lowercased())?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete Trip", role: .destructive) {
+            Button("Delete \(current.kind.label)", role: .destructive) {
                 Task { await events.deleteForTrip(current.id); await trips.delete(current); dismiss() }
             }
         }
@@ -188,7 +188,7 @@ struct TripDetailView: View {
 
     /// "Not going": archive the trip and drop its countdown.
     private func archive() async {
-        await events.deleteForTrip(current.id)
+        await events.deleteForTrip(current.id, keepingLinks: true)
         await trips.setArchived(current, true)
         dismiss()
     }

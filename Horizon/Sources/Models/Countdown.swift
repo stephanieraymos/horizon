@@ -144,7 +144,11 @@ enum CountdownBuilder {
             // every row let a plan copy ("Plan a party" from Alex's birthday) or a
             // one-off that has passed hide the birthday every year after.
             let covered = Set(events.filter { !$0.isPlanCopy && isUpcoming($0) }.map(key))
-            for b in birthdays where !covered.contains(key(b)) {
+            // A plan made from the birthday ("Plan a party" names it after the
+            // birthday, on that day) stands in for it while it's listed — the way
+            // a plan made from a real countdown hides that countdown.
+            let planned = Set(out.compactMap { c in c.trip == nil ? nil : key(title: c.title, date: c.date) })
+            for b in birthdays where !covered.contains(key(b)) && !planned.contains(key(b)) {
                 out.append(make(b, source: .birthday(b), prefix: "birthday"))
             }
         }
@@ -157,9 +161,11 @@ enum CountdownBuilder {
     }
 
     /// Same title, same month and day — how a real row "covers" a People birthday.
-    private static func key(_ e: FamilyEvent) -> String {
-        let c = Calendar.current.dateComponents([.month, .day], from: e.eventDate)
-        return "\(e.title.lowercased())|\(c.month ?? 0)-\(c.day ?? 0)"
+    private static func key(_ e: FamilyEvent) -> String { key(title: e.title, date: e.eventDate) }
+
+    private static func key(title: String, date: Date) -> String {
+        let c = Calendar.current.dateComponents([.month, .day], from: date)
+        return "\(title.lowercased())|\(c.month ?? 0)-\(c.day ?? 0)"
     }
 
     static func detail(for e: FamilyEvent) -> String? {

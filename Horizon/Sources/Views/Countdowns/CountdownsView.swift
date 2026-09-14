@@ -71,9 +71,11 @@ struct CountdownsView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
 
-            if items.isEmpty && !search.isEmpty {
+            // Past countdowns keep the list up even when nothing is ahead —
+            // the empty state would otherwise leave them unreachable.
+            if items.isEmpty && pastCountdowns.isEmpty && !search.isEmpty {
                 ContentUnavailableView.search
-            } else if items.isEmpty {
+            } else if items.isEmpty && pastCountdowns.isEmpty {
                 emptyState
             } else {
                 list(items)
@@ -250,7 +252,7 @@ struct CountdownsView: View {
 
     private var pastSection: some View {
         Section {
-            if showPast {
+            if showPast || !search.isEmpty {
                 ForEach(pastCountdowns) { e in
                     Button { if canEdit { editing = e } } label: {
                         HStack(spacing: 12) {

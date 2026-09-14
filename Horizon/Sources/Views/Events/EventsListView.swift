@@ -79,7 +79,7 @@ struct EventsBoardView: View {
     // MARK: - Actions
 
     private func archive(_ trip: Trip) async {
-        await events.deleteForTrip(trip.id)
+        await events.deleteForTrip(trip.id, keepingLinks: true)
         await trips.setArchived(trip, true)
     }
     private func restore(_ trip: Trip) async {

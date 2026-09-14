@@ -187,7 +187,12 @@ final class EventsStore {
             !e.isPlanCopy && cal.isDate(e.isAnnual ? e.nextOccurrenceDate : e.eventDate,
                                         inSameDayAs: departDate)
         }
-        if copy == nil, let marked { return marked.id }
+        if let marked {
+            // Back on the countdown's day: a copy here would put the day on
+            // Solstice's calendar twice, so the copy from when it moved away goes.
+            if let copy { await delete(copy) }
+            return marked.id
+        }
 
         await upsert(
             id: copy?.id,
@@ -204,22 +209,27 @@ final class EventsStore {
         return events.first { $0.tripID == tripID && $0.isPlanCopy }?.id ?? copy?.id
     }
 
-    /// Removes the plan's own countdown copy (the plan was deleted or marked
-    /// "Not going") and UNLINKS any countdown the plan was made from, which is
-    /// hers and outlives the plan. This deleted every linked row, so marking the
-    /// anniversary dinner "Not going" deleted the anniversary.
-    func deleteForTrip(_ tripID: UUID) async {
+    /// Removes the plan's own countdown copy and — unless `keepingLinks` — UNLINKS
+    /// any countdown the plan was made from, which is hers and outlives the plan.
+    /// This deleted every linked row, so marking the anniversary dinner "Not
+    /// going" deleted the anniversary.
+    ///
+    /// "Not going" keeps the link (`keepingLinks: true`): an archived plan isn't
+    /// listed, so the countdown shows on its own anyway, and Restore finds it
+    /// still linked instead of writing a second row for the same day.
+    func deleteForTrip(_ tripID: UUID, keepingLinks: Bool = false) async {
         do {
             try await supabase.from("fam_events").delete()
                 .eq("trip_id", value: tripID)
                 .eq("event_type", value: FamilyEventType.vacation.rawValue)
                 .eq("is_annual", value: false)
                 .execute()
+            events.removeAll { $0.tripID == tripID && $0.isPlanCopy }
+            guard !keepingLinks else { return }
             try await supabase.from("fam_events")
                 .update(TripLinkPatch(trip_id: nil))
                 .eq("trip_id", value: tripID)
                 .execute()
-            events.removeAll { $0.tripID == tripID && $0.isPlanCopy }
             for i in events.indices where events[i].tripID == tripID { events[i].tripID = nil }
         } catch { self.error = error.localizedDescription }
     }

@@ -28,6 +28,8 @@ struct CountdownsView: View {
     @State private var newKind: PlanKind?
     @State private var planFrom: FamilyEvent?
     @State private var openedTrip: Trip?
+    @State private var pushedTrip: Trip?
+    @State private var pushedCountdown: CountdownRoute?
     @State private var showPast = false
     @State private var search = ""
 
@@ -187,55 +189,56 @@ struct CountdownsView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .refreshable { await trips.load(); await events.load() }
+        .navigationDestination(item: $pushedTrip) { TripDetailView(trip: $0) }
+        .navigationDestination(item: $pushedCountdown) { route in
+            CountdownDetailView(event: route.event, isFromPeople: route.isFromPeople)
+        }
     }
 
     /// Every countdown is a card that opens its detail: a plan opens the plan,
-    /// a countdown or a People birthday opens CountdownDetailView. The link
-    /// sits behind the card — a NavigationLink label draws a chevron, which
-    /// reads as a stray arrow on a full-bleed photo.
+    /// a countdown or a People birthday opens CountdownDetailView. The push is
+    /// driven by state on the List (`pushedTrip` / `pushedCountdown`), NOT a
+    /// NavigationLink inside the row: a row-owned push pops the moment its row
+    /// moves section or disappears — which changing the date, the time, or
+    /// planning something around a countdown all do.
     @ViewBuilder
     private func card(_ item: Countdown, large: Bool) -> some View {
-        let linked = ZStack {
-            NavigationLink { destination(item) } label: { EmptyView() }
-                .opacity(0)
-            CountdownCard(item: item, large: large)
-        }
-        .cardRow()
+        // One plain Button + contextMenu (+ List-native swipe): the family's
+        // measured-safe pairing. Menus only for admins — an EMPTY contextMenu
+        // still installs the interaction.
+        let tappable = Button { open(item) } label: { CountdownCard(item: item, large: large) }
+            .buttonStyle(.plain)
+            .cardRow()
         switch item.source {
-        case .countdown(let e):
-            linked
+        case .countdown(let e) where canEdit:
+            tappable
                 .contextMenu {
-                    if canEdit {
-                        Button("Edit countdown", systemImage: "pencil") { editing = e }
-                        Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = e }
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            Task { await events.delete(e) }
-                        }
+                    Button("Edit countdown", systemImage: "pencil") { editing = e }
+                    Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = e }
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        Task { await events.delete(e) }
                     }
                 }
                 .swipeActions(edge: .trailing) {
-                    if canEdit {
-                        Button(role: .destructive) { Task { await events.delete(e) } } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+                    Button(role: .destructive) { Task { await events.delete(e) } } label: {
+                        Label("Delete", systemImage: "trash")
                     }
                 }
-        case .birthday(let e):
-            linked
+        case .birthday(let e) where canEdit:
+            tappable
                 .contextMenu {
                     Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = e }
                 }
-        case .plan:
-            linked
+        default:
+            tappable
         }
     }
 
-    @ViewBuilder
-    private func destination(_ item: Countdown) -> some View {
+    private func open(_ item: Countdown) {
         switch item.source {
-        case .plan(let trip):     TripDetailView(trip: trip)
-        case .countdown(let e):   CountdownDetailView(event: e)
-        case .birthday(let e):    CountdownDetailView(event: e, isFromPeople: true)
+        case .plan(let trip):   pushedTrip = trip
+        case .countdown(let e): pushedCountdown = .countdown(e)
+        case .birthday(let e):  pushedCountdown = .birthday(e)
         }
     }
 
@@ -257,7 +260,7 @@ struct CountdownsView: View {
         Section {
             if showPast || !search.isEmpty {
                 ForEach(pastCountdowns) { e in
-                    NavigationLink { CountdownDetailView(event: e) } label: {
+                    Button { pushedCountdown = .countdown(e) } label: {
                         HStack(spacing: 12) {
                             Text(e.emoji?.nilIfBlank ?? "⏳").font(.title3)
                             VStack(alignment: .leading, spacing: 2) {
@@ -271,6 +274,7 @@ struct CountdownsView: View {
                         }
                         .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
         } header: {

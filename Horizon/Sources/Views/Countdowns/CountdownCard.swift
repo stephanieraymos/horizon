@@ -1,6 +1,12 @@
 import SwiftUI
 import AppShellKit
 
+/// Every clock ticks on whole seconds, so cards on screen flip together
+/// rather than each on its own fraction of a second.
+enum CountdownTick {
+    static let origin = Date(timeIntervalSinceReferenceDate: 0)
+}
+
 // The Countdowns screen's cards, after the design she pointed at on 2026-09-14:
 // the photo full-bleed behind a dark film, a coloured edge, and the whole clock
 // — days, hours, minutes, seconds — ticking on the card itself.
@@ -26,7 +32,13 @@ struct ClockDigits: View {
         .lineLimit(1)
         .minimumScaleFactor(0.5)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(parts.days) days, \(parts.hours) hours, \(parts.minutes) minutes, \(parts.seconds) seconds to go")
+        .accessibilityLabel(Self.spoken(parts))
+    }
+
+    static func spoken(_ p: LiveCountdown.Parts) -> String {
+        func n(_ v: Int, _ unit: String) -> String { "\(v) \(unit)\(v == 1 ? "" : "s")" }
+        return [n(p.days, "day"), n(p.hours, "hour"), n(p.minutes, "minute"), n(p.seconds, "second")]
+            .joined(separator: ", ") + " to go"
     }
 
     private func group(_ value: Int, _ unit: String, pad: Bool = true) -> some View {
@@ -54,17 +66,22 @@ struct ClockDigits: View {
 struct CountdownCard: View {
     let item: Countdown
     var large = false
+    // Scale with Dynamic Type: at accessibility sizes the text rows outgrow a
+    // fixed 148 pt and the title was clipped off the top.
+    @ScaledMetric(relativeTo: .headline) private var smallHeight: CGFloat = 148
+    @ScaledMetric(relativeTo: .title3) private var largeHeight: CGFloat = 196
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             background
-            // The film: enough to keep white text readable on a bright photo.
-            LinearGradient(colors: [.black.opacity(item.cover == nil ? 0.05 : 0.30),
-                                    .black.opacity(item.cover == nil ? 0.30 : 0.62)],
+            // The film: enough to keep white text readable on a bright photo, and
+            // on a bright tint (teal/orange/green) in light mode.
+            LinearGradient(colors: [.black.opacity(item.cover == nil ? 0.25 : 0.38),
+                                    .black.opacity(item.cover == nil ? 0.45 : 0.62)],
                            startPoint: .top, endPoint: .bottom)
             content
         }
-        .frame(height: large ? 196 : 148)
+        .frame(height: large ? largeHeight : smallHeight)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .leading) {
             Rectangle().fill(item.tint).frame(width: 5)
@@ -72,6 +89,7 @@ struct CountdownCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
     @ViewBuilder
@@ -128,7 +146,7 @@ struct CountdownCard: View {
     }
 
     private var clock: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: CountdownTick.origin, by: 1)) { context in
             let target = item.moment
             if item.isHappeningNow {
                 Text(CountdownFormat.longUnit(item).map { "Happening now · \($0)" } ?? "Happening now")
@@ -137,9 +155,14 @@ struct CountdownCard: View {
                 ClockDigits(parts: LiveCountdown.parts(from: context.date, to: target),
                             size: large ? 40 : 28,
                             digit: .white, colon: .white.opacity(0.6), label: .white.opacity(0.78))
-            } else {
+            } else if Calendar.current.isDate(target, inSameDayAs: context.date) {
                 Text("It's today 🎉")
                     .font(.system(large ? .title2 : .title3, design: .rounded).weight(.bold))
+            } else {
+                // Only on a screen left open past its day; the next refresh drops it.
+                Text("Passed")
+                    .font(.system(large ? .title2 : .title3, design: .rounded).weight(.bold))
+                    .foregroundStyle(.white.opacity(0.8))
             }
         }
     }
@@ -153,6 +176,7 @@ struct PeriodCard: View {
 
     let period: Period
     @AppStorage private var style: String
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 176
 
     init(period: Period) {
         self.period = period
@@ -163,7 +187,7 @@ struct PeriodCard: View {
     private var tint: Color { period == .month ? .orange : .cyan }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: CountdownTick.origin, by: 1)) { context in
             let now = context.date
             let span = Self.interval(period, containing: now)
             let fraction = Self.fraction(of: span, at: now)
@@ -204,7 +228,7 @@ struct PeriodCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(period == .month ? "This month" : "This year"): \(percent(fraction)) gone, \(dayLabel(span, now: now))")
         }
-        .frame(height: 170)
+        .frame(height: height)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 5) }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))

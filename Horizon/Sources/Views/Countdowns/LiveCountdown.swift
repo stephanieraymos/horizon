@@ -11,9 +11,11 @@ struct LiveCountdown: View {
     var tint: Color = Theme.Colors.brand
     /// False when no time is set, so the caption can say it's counting to midnight.
     var hasExactTime: Bool
+    /// Whether the viewer can set a time — no point telling them to otherwise.
+    var canSetTime = true
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: CountdownTick.origin, by: 1)) { context in
             let now = context.date
             VStack(spacing: 10) {
                 if target > now {
@@ -23,7 +25,8 @@ struct LiveCountdown: View {
                                 colon: tint.opacity(0.7))
                     Text(hasExactTime
                          ? "Until \(target.formatted(date: .abbreviated, time: .shortened))"
-                         : "Until the start of \(target.formatted(date: .abbreviated, time: .omitted)) — set a time to count to the minute")
+                         : "Until the start of \(target.formatted(date: .abbreviated, time: .omitted))"
+                           + (canSetTime ? " — set a time to count to the minute" : ""))
                         .font(.caption)
                         .foregroundStyle(FamilyPalette.inkSecondary)
                         .multilineTextAlignment(.center)

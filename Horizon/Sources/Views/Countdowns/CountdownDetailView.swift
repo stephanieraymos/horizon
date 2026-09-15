@@ -9,6 +9,24 @@ import AppShellKit
 /// A People birthday has no `fam_events` row, so it has nothing to put a time
 /// or a note on; it shows the clock and offers to plan around it (which can
 /// turn it into a real countdown of its own).
+/// What a tapped countdown opens. Held in the HOST screen's state (not a
+/// NavigationLink inside a row), so the pushed detail can't pop when its row
+/// moves or disappears — and so where it came from is decided at the tap, not
+/// re-derived from the store (which once turned a just-deleted countdown into
+/// a "People birthday" ghost screen on Home).
+enum CountdownRoute: Hashable {
+    case countdown(FamilyEvent)
+    case birthday(FamilyEvent)
+
+    var event: FamilyEvent {
+        switch self { case .countdown(let e), .birthday(let e): return e }
+    }
+    var isFromPeople: Bool {
+        if case .birthday = self { return true }
+        return false
+    }
+}
+
 struct CountdownDetailView: View {
     let event: FamilyEvent
     /// True for a birthday synthesized from People (no row of its own).
@@ -33,7 +51,9 @@ struct CountdownDetailView: View {
         isFromPeople ? event : (events.events.first { $0.id == event.id } ?? event)
     }
 
-    private var canEdit: Bool { family.currentMember?.role == .admin && !isFromPeople }
+    /// fam_events / fam_trips writes are admin-only (RLS).
+    private var isAdmin: Bool { family.currentMember?.role == .admin }
+    private var canEdit: Bool { isAdmin && !isFromPeople }
     private var look: (symbol: String, tint: Color) { CountdownBuilder.appearance(for: current.eventType) }
     private var hasTime: Bool { TimeOfDay.components(current.eventTime) != nil }
 
@@ -42,7 +62,8 @@ struct CountdownDetailView: View {
             Section {
                 VStack(spacing: 14) {
                     header
-                    LiveCountdown(target: current.nextMoment, tint: look.tint, hasExactTime: hasTime)
+                    LiveCountdown(target: current.nextMoment, tint: look.tint, hasExactTime: hasTime,
+                                  canSetTime: canEdit)
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 .listRowBackground(Color.clear)
@@ -67,7 +88,7 @@ struct CountdownDetailView: View {
                     Button { editingTime = true } label: {
                         LabeledContent("Time") {
                             Text(TimeOfDay.label(current.eventTime) ?? "All day — add a time")
-                                .foregroundStyle(hasTime ? FamilyPalette.ink : Color.accentColor)
+                                .foregroundStyle(hasTime ? FamilyPalette.ink : Theme.Colors.brand)
                         }
                         // A plain-style Button only hits where its label draws —
                         // without this the gap between "Time" and the value is dead.
@@ -109,7 +130,9 @@ struct CountdownDetailView: View {
             }
 
             Section {
-                Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = current }
+                if isAdmin {
+                    Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = current }
+                }
                 if canEdit {
                     Button("Delete countdown", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 }
@@ -151,7 +174,11 @@ struct CountdownDetailView: View {
                 }
             }
         }
-        .sheet(item: $editingCountdown) { EventEditView(existing: $0) }
+        // Deleted from the editor: pop once the sheet has finished closing — a pop
+        // issued while it's still animating away can be dropped.
+        .sheet(item: $editingCountdown, onDismiss: {
+            if !isFromPeople && !events.events.contains(where: { $0.id == event.id }) { dismiss() }
+        }) { EventEditView(existing: $0) }
         .sheet(item: $openedTrip) { trip in
             NavigationStack { TripDetailView(trip: trip) }
         }
@@ -160,7 +187,11 @@ struct CountdownDetailView: View {
                             titleVisibility: .visible) {
             Button("Delete countdown", role: .destructive) {
                 let e = current
-                Task { await events.delete(e); dismiss() }
+                Task {
+                    await events.delete(e)
+                    // Only leave if it actually went (a failed delete keeps the row).
+                    if !events.events.contains(where: { $0.id == e.id }) { dismiss() }
+                }
             }
         }
         .onChange(of: photoItem) { _, item in
@@ -188,10 +219,6 @@ struct CountdownDetailView: View {
             get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
-        // Deleted from the editor sheet: nothing left to show.
-        .onChange(of: events.events.contains { $0.id == event.id }) { _, stillThere in
-            if !stillThere && !isFromPeople { dismiss() }
-        }
     }
 
     /// With a photo: the photo, with Change (a PhotosPicker) and Remove (a

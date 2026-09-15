@@ -14,13 +14,10 @@ struct HomeView: View {
     @AppStorage("events.showHolidays") private var showHolidays = true
 
     @State private var openTrip: Trip?
-    @State private var makeEventFor: FamilyEvent?
-    @State private var editingCountdown: FamilyEvent?
-    @State private var openCountdown: FamilyEvent?
+    @State private var openCountdown: CountdownRoute?
     @State private var showSettings = false
     @State private var showNotes = false
 
-    private var canEdit: Bool { family.currentMember?.role == .admin }
 
     // AppShell owns the NavigationStack for this tab; this root is bare. Trip
     // pushes go through `openTrip` + .navigationDestination(item:) so no path
@@ -70,13 +67,9 @@ struct HomeView: View {
         .sheet(isPresented: $showNotes) { NotesTabView() }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
-        .navigationDestination(item: $openCountdown) { e in
-            // A People birthday isn't in the events store — that's how it's told apart.
-            CountdownDetailView(event: e, isFromPeople: !events.events.contains { $0.id == e.id })
+        .navigationDestination(item: $openCountdown) { route in
+            CountdownDetailView(event: route.event, isFromPeople: route.isFromPeople)
         }
-        .sheet(item: $editingCountdown) { EventEditView(existing: $0) }
-        .eventActions(event: $makeEventFor, allowLinkEdit: false,
-                      onOpenTrip: { openTrip = $0 })
         .task {
             if trips.trips.isEmpty { await trips.load() }
             if dates.dates.isEmpty { await dates.load() }
@@ -270,7 +263,8 @@ struct HomeView: View {
     private func open(_ item: Countdown) {
         switch item.source {
         case .plan(let trip):                       openTrip = trip
-        case .countdown(let e), .birthday(let e):   openCountdown = e
+        case .countdown(let e):                     openCountdown = .countdown(e)
+        case .birthday(let e):                      openCountdown = .birthday(e)
         }
     }
 }

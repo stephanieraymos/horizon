@@ -204,7 +204,7 @@ struct PeriodCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(period == .month ? "This month" : "This year"): \(percent(fraction)) gone, \(dayLabel(span, now: now))")
         }
-        .frame(height: style == "bar" ? 170 : 148)
+        .frame(height: 170)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 5) }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))

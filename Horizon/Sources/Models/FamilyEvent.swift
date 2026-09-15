@@ -17,6 +17,10 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
     var description: String?
     var emoji: String?
     var coverPhotoURL: String?
+    /// Photo framing (0..1) on the countdown card. Decode-only — saved via
+    /// EventsStore.saveCoverFocus, so no upsert (Horizon's or The Glade's) touches it.
+    var coverFocusX: Double = 0.5
+    var coverFocusY: Double = 0.5
     var members: [String]?
     var albumID: UUID?
     /// Optional link to a Trip — tapping the countdown opens the trip.
@@ -35,6 +39,8 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         case isAnnual = "is_annual"
         case description, emoji
         case coverPhotoURL = "cover_photo_url"
+        case coverFocusX = "cover_focus_x"
+        case coverFocusY = "cover_focus_y"
         case members
         case albumID = "album_id"
         case tripID = "trip_id"
@@ -55,6 +61,8 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         description   = try c.decodeIfPresent(String.self, forKey: .description)
         emoji         = try c.decodeIfPresent(String.self, forKey: .emoji)
         coverPhotoURL = try c.decodeIfPresent(String.self, forKey: .coverPhotoURL)
+        coverFocusX   = try c.decodeIfPresent(Double.self, forKey: .coverFocusX) ?? 0.5
+        coverFocusY   = try c.decodeIfPresent(Double.self, forKey: .coverFocusY) ?? 0.5
         members       = try c.decodeIfPresent([String].self, forKey: .members)
         albumID       = try c.decodeIfPresent(UUID.self, forKey: .albumID)
         tripID        = try c.decodeIfPresent(UUID.self, forKey: .tripID)

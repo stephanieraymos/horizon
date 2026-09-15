@@ -45,6 +45,10 @@ struct CountdownDetailView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var photoError: String?
     @State private var saveError: String?
+    @State private var showReframe = false
+    /// Measured shape of the photo preview — which is the card's shape (same
+    /// width, same height), so Reframe previews exactly what the card shows.
+    @State private var photoAspect: CGFloat?
 
     /// Always the store's freshest copy, so a time or note saved here shows at once.
     private var current: FamilyEvent {
@@ -164,6 +168,16 @@ struct CountdownDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showReframe) {
+            let id = current.id
+            CoverCropView(cover: current.coverPhotoURL,
+                          focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY),
+                          title: "Adjust Photo", bannerAspect: photoAspect) { f in
+                if !(await events.saveCoverFocus(eventID: id, x: f.x, y: f.y)) {
+                    saveError = events.error ?? "Couldn't save the framing. Check your connection."
+                }
+            }
+        }
         .sheet(isPresented: $editingNote) {
             CountdownNoteSheet(title: "Note", current: current.description) { n in
                 let id = current.id
@@ -227,9 +241,16 @@ struct CountdownDetailView: View {
     @ViewBuilder
     private var photo: some View {
         if let cover = current.coverPhotoURL?.nilIfBlank {
-            AdjustableCoverImage(cover: cover) { Color.secondary.opacity(0.12) }
-                .frame(height: 160)
+            AdjustableCoverImage(cover: cover,
+                                 focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY)) {
+                Color.secondary.opacity(0.12)
+            }
+                // The countdown card's height, so this preview IS the card's framing.
+                .frame(height: 148)
                 .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width / max($0.size.height, 1) } action: {
+                    photoAspect = $0
+                }
                 .clipped()
                 .overlay(alignment: .bottom) {
                     if canEdit {
@@ -245,6 +266,16 @@ struct CountdownDetailView: View {
                             }
                             .buttonStyle(.plain)
                             Spacer()
+                            // Separate pills, nothing layered under any of them — a
+                            // Button over a PhotosPicker sent taps to the picker.
+                            Button { showReframe = true } label: {
+                                Label("Reframe", systemImage: "crop")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .glassSurface(in: Capsule(), fallback: .ultraThinMaterial)
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                             PhotosPicker(selection: $photoItem, matching: .images) {
                                 Label("Change", systemImage: "camera.fill")
                                     .font(.caption2.weight(.semibold))

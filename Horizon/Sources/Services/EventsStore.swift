@@ -203,14 +203,29 @@ final class EventsStore {
     /// storage object is left in place.
     @discardableResult
     func saveCover(eventID: UUID, path: String?) async -> Bool {
+        // A new (or no) photo starts centred — the old framing belonged to the old photo.
         struct P: Encodable {
             let cover_photo_url: String?
+            enum CodingKeys: String, CodingKey { case cover_photo_url, cover_focus_x, cover_focus_y }
             func encode(to encoder: Encoder) throws {
-                var c = encoder.singleValueContainer()
-                try c.encode(["cover_photo_url": cover_photo_url])
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(cover_photo_url, forKey: .cover_photo_url)   // nil → explicit null
+                try c.encode(0.5, forKey: .cover_focus_x)
+                try c.encode(0.5, forKey: .cover_focus_y)
             }
         }
-        return await patch(eventID: eventID, P(cover_photo_url: path)) { $0.coverPhotoURL = path }
+        return await patch(eventID: eventID, P(cover_photo_url: path)) {
+            $0.coverPhotoURL = path; $0.coverFocusX = 0.5; $0.coverFocusY = 0.5
+        }
+    }
+
+    /// Saves the photo's framing (focal point 0..1), nothing else.
+    @discardableResult
+    func saveCoverFocus(eventID: UUID, x: Double, y: Double) async -> Bool {
+        struct P: Encodable { let cover_focus_x: Double; let cover_focus_y: Double }
+        return await patch(eventID: eventID, P(cover_focus_x: x, cover_focus_y: y)) {
+            $0.coverFocusX = x; $0.coverFocusY = y
+        }
     }
 
     private func patch<P: Encodable>(eventID: UUID, _ body: P,

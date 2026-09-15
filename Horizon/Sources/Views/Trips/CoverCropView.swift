@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Drag the cover to re-frame it — adjusts the focal point (0..1) shown in the
-/// banner, saved back to the trip.
+/// Drag a photo to re-frame it — adjusts the focal point (0..1) it's shown at.
+/// Shared by a plan's cover (saved to fam_trips) and a countdown's photo (saved
+/// to fam_events); the host passes the photo, its current focus, the shape it's
+/// shown at, and how to save.
 ///
 /// The preview MUST be the banner's shape. It used to be a fixed 240 pt tall
 /// while the banner is 170 pt, so a photo that overflowed the banner top-to-
@@ -9,11 +11,12 @@ import SwiftUI
 /// nothing ("it won't let me drag to reposition", 2026-09-14) while the
 /// horizontal axis, which the banner never shows, was the only one that moved.
 struct CoverCropView: View {
-    let trip: Trip
+    let cover: String?
+    var title = "Adjust Cover"
     /// Width ÷ height of the banner being framed, measured where it's drawn.
     var bannerAspect: CGFloat = 393.0 / 170.0
+    let onSave: (UnitPoint) async -> Void
 
-    @Environment(TripsStore.self) private var trips
     @Environment(\.dismiss) private var dismiss
 
     @State private var focus: UnitPoint
@@ -23,10 +26,13 @@ struct CoverCropView: View {
     /// leave a stale base that makes the next drag jump.
     @State private var dragAnchor: (start: CGPoint, focus: UnitPoint)?
 
-    init(trip: Trip, bannerAspect: CGFloat? = nil) {
-        self.trip = trip
+    init(cover: String?, focus: UnitPoint, title: String = "Adjust Cover",
+         bannerAspect: CGFloat? = nil, onSave: @escaping (UnitPoint) async -> Void) {
+        self.cover = cover
+        self.title = title
+        self.onSave = onSave
         if let bannerAspect, bannerAspect.isFinite, bannerAspect > 0 { self.bannerAspect = bannerAspect }
-        _focus = State(initialValue: UnitPoint(x: trip.coverFocusX, y: trip.coverFocusY))
+        _focus = State(initialValue: focus)
     }
 
     var body: some View {
@@ -38,7 +44,7 @@ struct CoverCropView: View {
                 GeometryReader { geo in
                     let frame = geo.size
                     let overflow = overflow(in: frame)
-                    AdjustableCoverImage(cover: trip.coverPhotoURL, focus: focus) {
+                    AdjustableCoverImage(cover: cover, focus: focus) {
                         Color.secondary.opacity(0.12)
                     }
                     .frame(width: frame.width, height: frame.height)
@@ -73,13 +79,14 @@ struct CoverCropView: View {
                 Spacer()
             }
             .padding(.top, 20)
-            .navigationTitle("Adjust Cover")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        Task { await trips.saveCoverFocus(tripID: trip.id, x: focus.x, y: focus.y); dismiss() }
+                        let f = focus
+                        Task { await onSave(f); dismiss() }
                     }
                 }
             }
@@ -87,8 +94,8 @@ struct CoverCropView: View {
             // down (a UIKit pan that highPriorityGesture doesn't outrank) — and a
             // stray swipe shouldn't throw the adjustment away. Cancel/Save exist.
             .interactiveDismissDisabled()
-            .task(id: trip.coverPhotoURL) {
-                guard let cover = trip.coverPhotoURL?.nilIfBlank,
+            .task(id: cover) {
+                guard let cover = cover?.nilIfBlank,
                       let img = await HorizonImageLoader.loadCover(cover) else { return }
                 imageSize = img.size
             }

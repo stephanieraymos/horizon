@@ -165,7 +165,14 @@ struct TripDetailView: View {
         .sheet(isPresented: $showMoodBoard) {
             TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
         }
-        .sheet(isPresented: $showCoverCrop) { CoverCropView(trip: current, bannerAspect: bannerAspect) }
+        .sheet(isPresented: $showCoverCrop) {
+            let id = current.id
+            CoverCropView(cover: current.coverPhotoURL,
+                          focus: UnitPoint(x: current.coverFocusX, y: current.coverFocusY),
+                          bannerAspect: bannerAspect) { f in
+                await trips.saveCoverFocus(tripID: id, x: f.x, y: f.y)
+            }
+        }
         .sheet(isPresented: $editingStartTime) {
             TimeOfDaySheet(title: "Start time", current: current.startTime) { t in
                 let plan = current

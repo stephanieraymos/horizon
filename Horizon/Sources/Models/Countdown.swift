@@ -136,7 +136,8 @@ enum CountdownBuilder {
                     ? "Countdown" : e.eventType!,
                 category: .countdowns,
                 daysAway: e.daysAway, isHappeningNow: false, daysUntilEnd: nil,
-                time: e.eventTime, cover: e.coverPhotoURL?.nilIfBlank)
+                time: e.eventTime, cover: e.coverPhotoURL?.nilIfBlank,
+                coverFocus: UnitPoint(x: e.coverFocusX, y: e.coverFocusY))
         }
 
         // A trip-linked row is either the copy syncCountdown writes for a plan —

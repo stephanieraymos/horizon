@@ -163,3 +163,14 @@ Single-column patches (`EventsStore.patch`, `TripsStore.saveStartTime`) ask for 
 row back with `.select("id")`: fam_events/fam_trips writes are admin-only by RLS and
 a filtered-out UPDATE is a silent 204, which read as "saved" for the child account.
 `syncCountdown` takes `startTime:` so the plan copy Solstice reads carries the time.
+
+## Countdown photos reframe too: `fam_events.cover_focus_x/y` (2026-09-14)
+
+Same shape as `fam_trips`' (double, NOT NULL, default 0.5). Decode-only on
+`FamilyEvent`; written only by `EventsStore.saveCoverFocus`, and `saveCover` resets
+both to 0.5 with every new (or removed) photo. `CoverCropView` is host-agnostic:
+`init(cover:focus:title:bannerAspect:onSave:)` — the plan banner and the countdown
+detail each pass their photo, focus, measured shape and save closure. The countdown
+detail's photo preview is deliberately the small card's height (148) so Reframe
+previews the card's framing; the large "Next up" card (196) frames slightly
+differently, since focus is a fraction of the spare area, not a point.

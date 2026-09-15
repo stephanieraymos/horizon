@@ -30,7 +30,7 @@ settings:
     # `BUMP=minor make ship`. The default is PATCH, so a real feature ships looking
     # like a bug fix unless you say otherwise. Largest change in the ship decides.
     # Only the iOS script bumps; ship-mac reuses the version it wrote.
-    MARKETING_VERSION: "2.2.0"
+    MARKETING_VERSION: "2.2.1"
     CURRENT_PROJECT_VERSION: "1"
 
 packages:

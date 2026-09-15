@@ -123,8 +123,10 @@ String in Swift (`TimeOfDay`). NULL = all day = count to the start of the day, w
 is every row from before this. `FamilyEvent.nextMoment` / `Trip.startMoment` combine
 date + time via components, never `bySetting:`.
 
-- `Trip.startTime` is decode-only; saved via `TripsStore.saveStartTime`, so the plain
-  trip upsert (which omits it) never clears it.
+- `Trip.startTime` is decode-only; saved via `TripsStore.saveStartTime` — from the
+  plan header's "Add a start time" AND from TripEditView's "Start time" toggle (which
+  patches after the upsert, only when it changed) — so the plain trip upsert (which
+  omits it) never clears it, and neither do EventActions' or Duplicate's saves.
 - `EventsStore.upsert` ALWAYS writes `event_time` (custom `encode`), so turning the
   time off in the editor clears it. `saveTime` / `saveNote` / `saveCover` patch one
   column with an explicit JSON null. A synthesized Encodable drops a nil optional and

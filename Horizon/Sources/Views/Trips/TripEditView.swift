@@ -20,6 +20,10 @@ struct TripEditView: View {
     @State private var budgetText: String
     @State private var destText: String
     @State private var travelers: [String]
+    /// Start time on the first day. Saved on its own (TripsStore.saveStartTime),
+    /// never through the full-row upsert, so no other trip save can clear it.
+    @State private var hasStartTime: Bool
+    @State private var startTime: Date
     private let isNew: Bool
 
     init(trip: Trip) {
@@ -34,6 +38,8 @@ struct TripEditView: View {
         _budgetText = State(initialValue: trip.budget.map { String(Int($0)) } ?? "")
         _destText = State(initialValue: trip.destination ?? "")
         _travelers = State(initialValue: trip.travelers ?? [])
+        _hasStartTime = State(initialValue: TimeOfDay.components(trip.startTime) != nil)
+        _startTime = State(initialValue: TimeOfDay.pickerDate(trip.startTime))
         isNew = trip.createdAt == nil && trip.name.isEmpty
     }
 
@@ -72,6 +78,10 @@ struct TripEditView: View {
                     if hasDates {
                         DatePicker(!multiDay ? "Date" : (overnight ? "Depart" : "First day"),
                                    selection: $departDate, displayedComponents: .date)
+                        Toggle("Start time", isOn: $hasStartTime.animation())
+                        if hasStartTime {
+                            DatePicker("Starts at", selection: $startTime, displayedComponents: .hourAndMinute)
+                        }
                         Toggle("Multi-day", isOn: $multiDay.animation())
                         if multiDay {
                             DatePicker(overnight ? "Return" : "Last day", selection: $returnDate,
@@ -186,6 +196,14 @@ struct TripEditView: View {
         draft.budget = Double(budgetText.filter(\.isNumber))
         if draft.createdBy == nil { draft.createdBy = family.currentMember?.id }
         await trips.save(draft)
+        // Only when it changed: a single-column patch (explicit null to clear).
+        // No dates means no start time either.
+        let newStart = (hasDates && hasStartTime) ? TimeOfDay.string(from: startTime) : nil
+        let oldStart = TimeOfDay.components(draft.startTime)
+            .map { String(format: "%02d:%02d:00", $0.hour ?? 0, $0.minute ?? 0) }
+        if newStart != oldStart {
+            await trips.saveStartTime(tripID: draft.id, time: newStart)
+        }
         // A dated trip automatically gets (and keeps in sync) a linked countdown.
         await events.syncCountdown(forTripID: draft.id, familyID: draft.familyID,
                                    name: draft.name, departDate: draft.departDate,

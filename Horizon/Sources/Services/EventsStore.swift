@@ -65,6 +65,7 @@ final class EventsStore {
         title: String,
         eventType: String?,
         eventDate: Date,
+        eventTime: String? = nil,
         isAnnual: Bool,
         description: String?,
         emoji: String?,
@@ -78,12 +79,37 @@ final class EventsStore {
             let title: String
             let event_type: String?
             let event_date: String
+            let event_time: String?
             let is_annual: Bool
             let description: String?
             let emoji: String?
             let members: [String]?
             let trip_id: UUID?
             let created_by: UUID?
+
+            // Synthesized Encodable drops nil optionals, and PostgREST leaves an
+            // omitted column untouched — so turning the time off in the editor
+            // never cleared it. event_time is always written; the rest keep the
+            // omit-when-nil behaviour they've always had.
+            enum CodingKeys: String, CodingKey {
+                case id, family_id, title, event_type, event_date, event_time, is_annual
+                case description, emoji, members, trip_id, created_by
+            }
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encodeIfPresent(id, forKey: .id)
+                try c.encode(family_id, forKey: .family_id)
+                try c.encode(title, forKey: .title)
+                try c.encodeIfPresent(event_type, forKey: .event_type)
+                try c.encode(event_date, forKey: .event_date)
+                try c.encode(event_time, forKey: .event_time)
+                try c.encode(is_annual, forKey: .is_annual)
+                try c.encodeIfPresent(description, forKey: .description)
+                try c.encodeIfPresent(emoji, forKey: .emoji)
+                try c.encodeIfPresent(members, forKey: .members)
+                try c.encodeIfPresent(trip_id, forKey: .trip_id)
+                try c.encodeIfPresent(created_by, forKey: .created_by)
+            }
         }
 
         let f = DateFormatter()
@@ -97,6 +123,7 @@ final class EventsStore {
             title: title,
             event_type: eventType?.nilIfBlank,
             event_date: f.string(from: eventDate),
+            event_time: eventTime?.nilIfBlank,
             is_annual: isAnnual,
             description: description?.nilIfBlank,
             emoji: emoji?.nilIfBlank,
@@ -118,6 +145,82 @@ final class EventsStore {
             } else {
                 events.append(saved)
             }
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Sets or clears a countdown's exact time without touching anything else
+    /// on the row. `time` is "HH:mm:ss"; nil writes an explicit JSON null (a
+    /// nil optional in a synthesized Encodable is dropped, which changes nothing).
+    @discardableResult
+    func saveTime(eventID: UUID, time: String?) async -> Bool {
+        struct P: Encodable {
+            let event_time: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.singleValueContainer()
+                try c.encode(["event_time": event_time])
+            }
+        }
+        return await patch(eventID: eventID, P(event_time: time?.nilIfBlank)) { $0.eventTime = time?.nilIfBlank }
+    }
+
+    /// Sets or clears a countdown's note (`fam_events.description`, the same
+    /// field the editor has always called Description), nothing else.
+    @discardableResult
+    func saveNote(eventID: UUID, note: String?) async -> Bool {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        struct P: Encodable {
+            let description: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.singleValueContainer()
+                try c.encode(["description": description])
+            }
+        }
+        return await patch(eventID: eventID, P(description: trimmed)) { $0.description = trimmed }
+    }
+
+    /// Uploads a photo for a countdown's card and points the row at it. A fresh
+    /// filename per upload changes the path, so no cache keeps the old photo.
+    @discardableResult
+    func setCover(eventID: UUID, familyID: UUID, imageData: Data) async -> Bool {
+        let path = "\(familyID.uuidString.lowercased())/covers/event-\(eventID.uuidString.lowercased())-\(UUID().uuidString.lowercased()).jpg"
+        do {
+            try await StorageService.upload(path: path, data: imageData, contentType: "image/jpeg")
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        return await saveCover(eventID: eventID, path: path)
+    }
+
+    /// Points the row at `path`, or clears it (explicit null) when nil. The
+    /// storage object is left in place.
+    @discardableResult
+    func saveCover(eventID: UUID, path: String?) async -> Bool {
+        struct P: Encodable {
+            let cover_photo_url: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.singleValueContainer()
+                try c.encode(["cover_photo_url": cover_photo_url])
+            }
+        }
+        return await patch(eventID: eventID, P(cover_photo_url: path)) { $0.coverPhotoURL = path }
+    }
+
+    private func patch<P: Encodable>(eventID: UUID, _ body: P,
+                                     apply: (inout FamilyEvent) -> Void) async -> Bool {
+        #if DEBUG
+        if DemoMode.isActive {
+            if let i = events.firstIndex(where: { $0.id == eventID }) { apply(&events[i]) }
+            return true
+        }
+        #endif
+        do {
+            try await supabase.from("fam_events").update(body).eq("id", value: eventID).execute()
+            if let i = events.firstIndex(where: { $0.id == eventID }) { apply(&events[i]) }
             return true
         } catch {
             self.error = error.localizedDescription
@@ -200,6 +303,7 @@ final class EventsStore {
             title: name,
             eventType: FamilyEventType.vacation.rawValue,
             eventDate: departDate,
+            eventTime: copy?.eventTime,
             isAnnual: false,
             description: copy?.description,
             emoji: copy?.emoji ?? "✈️",

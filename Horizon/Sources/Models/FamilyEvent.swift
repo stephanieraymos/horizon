@@ -10,6 +10,9 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
     var title: String
     var eventType: String?
     var eventDate: Date
+    /// Optional local time ("19:30:00"). Nil = all day — count to midnight.
+    /// Written only by `EventsStore.saveTime` and the editor's upsert.
+    var eventTime: String?
     var isAnnual: Bool
     var description: String?
     var emoji: String?
@@ -28,6 +31,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         case title
         case eventType = "event_type"
         case eventDate = "event_date"
+        case eventTime = "event_time"
         case isAnnual = "is_annual"
         case description, emoji
         case coverPhotoURL = "cover_photo_url"
@@ -46,6 +50,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         title         = try c.decode(String.self, forKey: .title)
         eventType     = try c.decodeIfPresent(String.self, forKey: .eventType)
         eventDate     = try decodeDateOnly(c, forKey: .eventDate)
+        eventTime     = try c.decodeIfPresent(String.self, forKey: .eventTime)
         isAnnual      = (try? c.decode(Bool.self, forKey: .isAnnual)) ?? false
         description   = try c.decodeIfPresent(String.self, forKey: .description)
         emoji         = try c.decodeIfPresent(String.self, forKey: .emoji)
@@ -66,6 +71,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         title: String,
         eventType: String? = nil,
         eventDate: Date,
+        eventTime: String? = nil,
         isAnnual: Bool = false,
         description: String? = nil,
         emoji: String? = nil,
@@ -82,6 +88,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         self.title         = title
         self.eventType     = eventType
         self.eventDate     = eventDate
+        self.eventTime     = eventTime
         self.isAnnual      = isAnnual
         self.description   = description
         self.emoji         = emoji
@@ -101,6 +108,7 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(eventType, forKey: .eventType)
         try encodeDateOnly(&c, eventDate, forKey: .eventDate)
+        try c.encodeIfPresent(eventTime, forKey: .eventTime)
         try c.encode(isAnnual, forKey: .isAnnual)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(emoji, forKey: .emoji)
@@ -128,6 +136,14 @@ struct FamilyEvent: Codable, Identifiable, Hashable {
         }
         comps.year = (comps.year ?? cal.component(.year, from: today)) + 1
         return cal.date(from: comps) ?? eventDate
+    }
+
+    /// The exact moment the countdown lands on: the next occurrence (annual) or
+    /// the date, at `eventTime` — or the start of that day when there's no time.
+    /// On the day itself this stays today's moment even once it has passed, so
+    /// the detail screen can say "it's today" rather than jump a year ahead.
+    var nextMoment: Date {
+        TimeOfDay.moment(on: isAnnual ? nextOccurrenceDate : eventDate, time: eventTime)
     }
 
     /// Whole-day distance from today to the event's next display date.

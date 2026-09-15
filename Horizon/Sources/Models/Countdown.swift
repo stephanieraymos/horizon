@@ -44,6 +44,20 @@ struct Countdown: Identifiable {
     let isHappeningNow: Bool
     /// Days until a happening plan ends ("3 days left").
     let daysUntilEnd: Int?
+    /// Exact local time ("19:30:00") when one is set; nil = all day.
+    var time: String? = nil
+    /// Photo for the card (a plan's cover, or a countdown's own) and its framing.
+    var cover: String? = nil
+    var coverFocus: UnitPoint = .center
+
+    /// The exact moment it lands: `date` at `time`, else the start of that day.
+    var moment: Date { TimeOfDay.moment(on: date, time: time) }
+
+    /// A birthday synthesized from People — no row to put a time or note on.
+    var isFromPeople: Bool {
+        if case .birthday = source { return true }
+        return false
+    }
 
     var trip: Trip? {
         if case .plan(let t) = source { return t }
@@ -98,7 +112,9 @@ enum CountdownBuilder {
                 detail: parts.isEmpty ? nil : parts.joined(separator: " · "),
                 badge: t.kind.label,
                 category: t.kind.isTravel ? .trips : .events,
-                daysAway: d, isHappeningNow: d < 0, daysUntilEnd: d < 0 ? end : nil))
+                daysAway: d, isHappeningNow: d < 0, daysUntilEnd: d < 0 ? end : nil,
+                time: t.startTime, cover: t.coverPhotoURL?.nilIfBlank,
+                coverFocus: UnitPoint(x: t.coverFocusX, y: t.coverFocusY)))
         }
 
         func passes(_ e: FamilyEvent) -> Bool {
@@ -119,7 +135,8 @@ enum CountdownBuilder {
                 badge: (e.eventType == nil || e.eventType == FamilyEventType.other.rawValue)
                     ? "Countdown" : e.eventType!,
                 category: .countdowns,
-                daysAway: e.daysAway, isHappeningNow: false, daysUntilEnd: nil)
+                daysAway: e.daysAway, isHappeningNow: false, daysUntilEnd: nil,
+                time: e.eventTime, cover: e.coverPhotoURL?.nilIfBlank)
         }
 
         // A trip-linked row is either the copy syncCountdown writes for a plan —

@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var openTrip: Trip?
     @State private var makeEventFor: FamilyEvent?
     @State private var editingCountdown: FamilyEvent?
+    @State private var openCountdown: FamilyEvent?
     @State private var showSettings = false
     @State private var showNotes = false
 
@@ -69,6 +70,10 @@ struct HomeView: View {
         .sheet(isPresented: $showNotes) { NotesTabView() }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .navigationDestination(item: $openTrip) { TripDetailView(trip: $0) }
+        .navigationDestination(item: $openCountdown) { e in
+            // A People birthday isn't in the events store — that's how it's told apart.
+            CountdownDetailView(event: e, isFromPeople: !events.events.contains { $0.id == e.id })
+        }
         .sheet(item: $editingCountdown) { EventEditView(existing: $0) }
         .eventActions(event: $makeEventFor, allowLinkEdit: false,
                       onOpenTrip: { openTrip = $0 })
@@ -260,13 +265,12 @@ struct HomeView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    /// A plan opens; a countdown opens its editor; a People birthday (no row of
-    /// its own) offers to plan something around it.
+    /// A plan opens; a countdown or a People birthday opens its detail — the
+    /// live clock, the time and the note.
     private func open(_ item: Countdown) {
         switch item.source {
-        case .plan(let trip):     openTrip = trip
-        case .countdown(let e):   if canEdit { editingCountdown = e }
-        case .birthday(let e):    makeEventFor = e
+        case .plan(let trip):                       openTrip = trip
+        case .countdown(let e), .birthday(let e):   openCountdown = e
         }
     }
 }

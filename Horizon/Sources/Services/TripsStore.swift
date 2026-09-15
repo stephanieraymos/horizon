@@ -326,6 +326,30 @@ final class TripsStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Sets or clears a plan's start time ("HH:mm:ss") on its own, so the plain
+    /// trip upsert — which doesn't carry it — never clears it. Nil writes an
+    /// explicit JSON null.
+    func saveStartTime(tripID: UUID, time: String?) async {
+        let value = time?.nilIfBlank
+        struct P: Encodable {
+            let start_time: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.singleValueContainer()
+                try c.encode(["start_time": start_time])
+            }
+        }
+        #if DEBUG
+        if DemoMode.isActive {
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].startTime = value }
+            return
+        }
+        #endif
+        do {
+            try await supabase.from("fam_trips").update(P(start_time: value)).eq("id", value: tripID).execute()
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].startTime = value }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     /// Writes the cached forecast onto the trip row.
     func saveWeatherCache(tripID: UUID, cache: WeatherCache) async {
         struct P: Encodable { let weather_cache: WeatherCache }
@@ -338,7 +362,15 @@ final class TripsStore {
     /// Clears a trip's cover photo (the storage object is left; the row just
     /// stops pointing at it).
     func clearTripCover(tripID: UUID) async {
-        struct P: Encodable { let cover_photo_url: String? }
+        // Explicit JSON null: a synthesized Encodable drops a nil optional, so
+        // this used to send an empty update and "Remove cover photo" did nothing.
+        struct P: Encodable {
+            let cover_photo_url: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.singleValueContainer()
+                try c.encode(["cover_photo_url": cover_photo_url])
+            }
+        }
         do {
             try await supabase.from("fam_trips").update(P(cover_photo_url: nil)).eq("id", value: tripID).execute()
             if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverPhotoURL = nil }

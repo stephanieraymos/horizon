@@ -14,6 +14,8 @@ struct EventEditView: View {
     @State private var eventType: String = FamilyEventType.other.rawValue
     @State private var eventDate: Date = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
     @State private var isAnnual: Bool = false
+    @State private var hasTime = false
+    @State private var time: Date = TimeOfDay.pickerDate(nil)
     @State private var description: String = ""
     @State private var emoji: String = ""
     @State private var selectedMembers: Set<String> = []
@@ -59,6 +61,10 @@ struct EventEditView: View {
                 Section {
                     // Show full date (including year) so birthdays can capture birth year
                     DatePicker("Date", selection: $eventDate, displayedComponents: .date)
+                    Toggle("Set a time", isOn: $hasTime.animation())
+                    if hasTime {
+                        DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                    }
                     Toggle("Repeats every year", isOn: $isAnnual)
                 } header: {
                     Text("When")
@@ -88,8 +94,9 @@ struct EventEditView: View {
                     }
                 }
 
-                Section("Description") {
-                    TextField("Add details", text: $description, axis: .vertical)
+                // Same `description` column as ever — "Note" is what she calls it.
+                Section("Note") {
+                    TextField("Add a note", text: $description, axis: .vertical)
                         .lineLimit(2...6)
                 }
 
@@ -138,6 +145,8 @@ struct EventEditView: View {
         eventType       = existing.eventType ?? FamilyEventType.other.rawValue
         eventDate       = existing.eventDate
         isAnnual        = existing.isAnnual
+        hasTime         = TimeOfDay.components(existing.eventTime) != nil
+        time            = TimeOfDay.pickerDate(existing.eventTime)
         description     = existing.description ?? ""
         emoji           = existing.emoji ?? ""
         selectedMembers = Set(existing.members ?? [])
@@ -152,6 +161,7 @@ struct EventEditView: View {
             title: title.trimmingCharacters(in: .whitespaces),
             eventType: eventType,
             eventDate: eventDate,
+            eventTime: hasTime ? TimeOfDay.string(from: time) : nil,
             isAnnual: isAnnual,
             description: description,
             emoji: emoji,

@@ -104,3 +104,39 @@ A helper `func` returning `some View` can't be called inside a `PhotosPicker`
 label closure under Swift 6 (non-Sendable result into a nonisolated context).
 Write the label inline.
 
+
+## Adjust Cover previews at the BANNER's shape (2026-09-14)
+
+`CoverCropView` used a fixed 240 pt preview while the trip banner is 170 pt tall.
+Aspect-fill overflows on only ONE axis, and which one depends on the frame's shape,
+so a photo that overflowed the banner top-to-bottom fit the preview exactly on that
+axis: every vertical drag did nothing ("it won't let me drag"), and the only axis
+that moved was one the banner never shows. `TripDetailView` now measures the banner
+(`onGeometryChange`) and passes `bannerAspect`; overflow is recomputed each layout
+from the loaded image size, not measured once in a `.task`. Any new surface that
+reframes a photo must preview at the shape it will be shown at.
+
+## Exact times: `fam_events.event_time`, `fam_trips.start_time` (2026-09-14)
+
+Both are Postgres `time` (local wall clock, no zone), nullable, "HH:mm:ss" as a
+String in Swift (`TimeOfDay`). NULL = all day = count to the start of the day, which
+is every row from before this. `FamilyEvent.nextMoment` / `Trip.startMoment` combine
+date + time via components, never `bySetting:`.
+
+- `Trip.startTime` is decode-only; saved via `TripsStore.saveStartTime`, so the plain
+  trip upsert (which omits it) never clears it.
+- `EventsStore.upsert` ALWAYS writes `event_time` (custom `encode`), so turning the
+  time off in the editor clears it. `saveTime` / `saveNote` / `saveCover` patch one
+  column with an explicit JSON null. A synthesized Encodable drops a nil optional and
+  PostgREST then changes nothing — `clearTripCover` had exactly this bug ("Remove
+  cover photo" never removed it) until this commit.
+- The note IS `fam_events.description` (the editor's old "Description" field).
+
+## Countdown cards tick every second
+
+`CountdownCard` / `PeriodCard` / `LiveCountdown` each run a 1 s `TimelineView`. Rows
+are cards in a List (`cardRow()`: clear background, no separator, zero insets) with
+the NavigationLink hidden behind the card — a link label draws a chevron. Countdown
+cards keep ONE contextMenu + swipe (the measured-safe pairing). Countdown photos
+live in `fam_events.cover_photo_url` as storage paths (`covers/event-…`); The Glade
+decodes the column but draws nothing from it.

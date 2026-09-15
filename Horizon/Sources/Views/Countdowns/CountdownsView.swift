@@ -20,6 +20,7 @@ struct CountdownsView: View {
     // Shared with the Plans board's old chips so a choice made there carries over.
     @AppStorage("events.showBirthdays") private var showBirthdays = true
     @AppStorage("events.showHolidays") private var showHolidays = true
+    @AppStorage("countdowns.showPeriods") private var showPeriods = true
 
     @State private var filter: Filter = .all
     @State private var editing: FamilyEvent?
@@ -91,6 +92,7 @@ struct CountdownsView: View {
                 Menu {
                     Toggle(isOn: $showBirthdays) { Label("Birthdays from People", systemImage: "birthday.cake") }
                     Toggle(isOn: $showHolidays) { Label("Holidays", systemImage: "star") }
+                    Toggle(isOn: $showPeriods) { Label("This month & year", systemImage: "chart.bar.fill") }
                 } label: {
                     Label("Show", systemImage: "line.3.horizontal.decrease.circle")
                 }
@@ -162,16 +164,20 @@ struct CountdownsView: View {
         List {
             if let next = items.first {
                 Section {
-                    hero(next)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowBackground(Color.clear)
+                    card(next, large: true)
                 } header: {
                     Text("Next up")
                 }
             }
+            if showPeriods && filter == .all && search.trimmingCharacters(in: .whitespaces).isEmpty {
+                Section("Month & year") {
+                    PeriodCard(period: .month).cardRow()
+                    PeriodCard(period: .year).cardRow()
+                }
+            }
             ForEach(buckets(Array(items.dropFirst()))) { bucket in
                 Section(bucket.title) {
-                    ForEach(bucket.items) { row($0) }
+                    ForEach(bucket.items) { card($0, large: false) }
                 }
             }
             if !pastCountdowns.isEmpty {
@@ -183,35 +189,21 @@ struct CountdownsView: View {
         .refreshable { await trips.load(); await events.load() }
     }
 
+    /// Every countdown is a card that opens its detail: a plan opens the plan,
+    /// a countdown or a People birthday opens CountdownDetailView. The link
+    /// sits behind the card — a NavigationLink label draws a chevron, which
+    /// reads as a stray arrow on a full-bleed photo.
     @ViewBuilder
-    private func hero(_ item: Countdown) -> some View {
-        switch item.source {
-        case .plan(let trip):
-            // A NavigationLink draws a chevron beside its label; over a full-bleed
-            // card that reads as a stray arrow, so the link sits behind the card.
-            ZStack {
-                NavigationLink { TripDetailView(trip: trip) } label: { EmptyView() }
-                    .opacity(0)
-                CountdownHero(item: item)
-            }
-        case .countdown(let e):
-            Button { if canEdit { editing = e } } label: { CountdownHero(item: item) }
-                .buttonStyle(.plain)
-        case .birthday(let e):
-            Button { planFrom = e } label: { CountdownHero(item: item) }
-                .buttonStyle(.plain)
+    private func card(_ item: Countdown, large: Bool) -> some View {
+        let linked = ZStack {
+            NavigationLink { destination(item) } label: { EmptyView() }
+                .opacity(0)
+            CountdownCard(item: item, large: large)
         }
-    }
-
-    @ViewBuilder
-    private func row(_ item: Countdown) -> some View {
+        .cardRow()
         switch item.source {
-        case .plan(let trip):
-            NavigationLink { TripDetailView(trip: trip) } label: { CountdownRow(item: item) }
         case .countdown(let e):
-            // One plain Button + contextMenu: the family's measured-safe pairing.
-            Button { if canEdit { editing = e } } label: { CountdownRow(item: item) }
-                .buttonStyle(.plain)
+            linked
                 .contextMenu {
                     if canEdit {
                         Button("Edit countdown", systemImage: "pencil") { editing = e }
@@ -229,10 +221,21 @@ struct CountdownsView: View {
                     }
                 }
         case .birthday(let e):
-            // A People birthday has no row to edit — tapping offers to plan
-            // something around it (a party, a trip, or a countdown of its own).
-            Button { planFrom = e } label: { CountdownRow(item: item) }
-                .buttonStyle(.plain)
+            linked
+                .contextMenu {
+                    Button("Plan something around it…", systemImage: "calendar.badge.plus") { planFrom = e }
+                }
+        case .plan:
+            linked
+        }
+    }
+
+    @ViewBuilder
+    private func destination(_ item: Countdown) -> some View {
+        switch item.source {
+        case .plan(let trip):     TripDetailView(trip: trip)
+        case .countdown(let e):   CountdownDetailView(event: e)
+        case .birthday(let e):    CountdownDetailView(event: e, isFromPeople: true)
         }
     }
 
@@ -254,7 +257,7 @@ struct CountdownsView: View {
         Section {
             if showPast || !search.isEmpty {
                 ForEach(pastCountdowns) { e in
-                    Button { if canEdit { editing = e } } label: {
+                    NavigationLink { CountdownDetailView(event: e) } label: {
                         HStack(spacing: 12) {
                             Text(e.emoji?.nilIfBlank ?? "⏳").font(.title3)
                             VStack(alignment: .leading, spacing: 2) {
@@ -268,7 +271,6 @@ struct CountdownsView: View {
                         }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                 }
             }
         } header: {
@@ -337,51 +339,7 @@ struct CountdownRow: View {
     }
 
     private var subtitle: String {
-        [CountdownFormat.date(item.date), item.detail].compactMap { $0 }.joined(separator: " · ")
-    }
-}
-
-/// The next thing, large.
-struct CountdownHero: View {
-    let item: Countdown
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                CountdownIcon(item: item, size: 46)
-                Spacer()
-                Text(item.badge)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(item.tint.opacity(0.15), in: Capsule())
-                    .foregroundStyle(item.tint)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(CountdownFormat.value(item))
-                    .font(.system(size: 54, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(item.tint)
-                if let unit = CountdownFormat.longUnit(item) {
-                    Text(unit)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(FamilyPalette.inkSecondary)
-                }
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(FamilyPalette.ink)
-                Text([CountdownFormat.date(item.date), item.detail].compactMap { $0 }.joined(separator: " · "))
-                    .font(.subheadline)
-                    .foregroundStyle(FamilyPalette.inkSecondary)
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(item.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(item.tint.opacity(0.18)))
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        CountdownFormat.subtitle(item)
     }
 }
 
@@ -447,11 +405,26 @@ enum CountdownFormat {
         return item.daysAway == 1 ? "day to go" : "days to go"
     }
 
+    /// "Sat, Sep 27 · 7:30 PM · Turns 34" — the time only when one is set.
+    static func subtitle(_ item: Countdown) -> String {
+        [date(item.date), TimeOfDay.label(item.time), item.detail].compactMap { $0 }.joined(separator: " · ")
+    }
+
     /// "Sat, Sep 27" — with the year once it isn't this year.
     static func date(_ d: Date) -> String {
         let sameYear = Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year)
         return sameYear
             ? d.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
             : d.formatted(.dateTime.month(.abbreviated).day().year())
+    }
+}
+
+private extension View {
+    /// A card sitting in a List row: full row width, no cell fill, no separator.
+    func cardRow() -> some View {
+        self
+            .listRowInsets(EdgeInsets(top: 5, leading: 0, bottom: 5, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 }

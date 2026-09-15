@@ -25,6 +25,8 @@ struct TripDetailView: View {
     @State private var showPasteReservation = false
     @State private var showCoverCrop = false
     @State private var showCapture = false
+    @State private var bannerAspect: CGFloat?
+    @State private var editingStartTime = false
 
     init(trip: Trip) {
         self.trip = trip
@@ -162,7 +164,12 @@ struct TripDetailView: View {
         .sheet(isPresented: $showMoodBoard) {
             TripMoodBoardView(tripID: current.id, familyID: current.familyID, tripName: current.name)
         }
-        .sheet(isPresented: $showCoverCrop) { CoverCropView(trip: current) }
+        .sheet(isPresented: $showCoverCrop) { CoverCropView(trip: current, bannerAspect: bannerAspect) }
+        .sheet(isPresented: $editingStartTime) {
+            TimeOfDaySheet(title: "Start time", current: current.startTime) { t in
+                Task { await trips.saveStartTime(tripID: current.id, time: t) }
+            }
+        }
         .sheet(isPresented: $showPasteReservation) {
             PasteReservationSheet(familyID: current.familyID, tripID: current.id, onReview: { parsed in
                 // Let the paste sheet finish dismissing before presenting the editor.
@@ -264,6 +271,10 @@ struct TripDetailView: View {
                 }
                 .frame(height: 170)
                 .frame(maxWidth: .infinity)
+                // Adjust Cover previews at exactly this shape (see CoverCropView).
+                .onGeometryChange(for: CGFloat.self) { $0.size.width / max($0.size.height, 1) } action: {
+                    bannerAspect = $0
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .overlay(alignment: .bottom) {
                     HStack {
@@ -329,6 +340,21 @@ struct TripDetailView: View {
             if let length = current.lengthLabel {
                 Text(length)
                     .font(.subheadline).foregroundStyle(.secondary)
+            }
+            // A live clock to the second while the plan is still ahead, and the
+            // start time that makes it exact.
+            if let start = current.startMoment, !current.isPast,
+               (current.daysUntilDeparture ?? -1) >= 0 {
+                LiveCountdown(target: start, hasExactTime: current.startTime != nil)
+                    .padding(.top, 6)
+                Button {
+                    editingStartTime = true
+                } label: {
+                    Label(TimeOfDay.label(current.startTime).map { "Starts at \($0)" } ?? "Add a start time",
+                          systemImage: "clock")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.borderless)
             }
         }
         .frame(maxWidth: .infinity)

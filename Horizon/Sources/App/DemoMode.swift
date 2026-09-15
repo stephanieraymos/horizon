@@ -75,7 +75,9 @@ enum DemoMode {
                         eventDate: cal.date(from: DateComponents(year: 2000, month: 10, day: 31))!,
                         isAnnual: true, emoji: "🎃"),
             FamilyEvent(id: UUID(), familyID: familyID, title: "Half marathon",
-                        eventType: FamilyEventType.milestone.rawValue, eventDate: day(53), emoji: "🏃‍♀️"),
+                        eventType: FamilyEventType.milestone.rawValue, eventDate: day(53),
+                        eventTime: "07:30:00",
+                        description: "Bib pickup the day before. Corral C.", emoji: "🏃‍♀️"),
             FamilyEvent(id: UUID(), familyID: familyID, title: "Last day of school",
                         eventType: FamilyEventType.other.rawValue, eventDate: day(160)),
             // The trip-linked row syncCountdown writes for Maui. It must NOT show a

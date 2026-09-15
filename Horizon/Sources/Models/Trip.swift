@@ -110,8 +110,18 @@ struct Trip: Codable, Identifiable, Hashable {
     /// over, events don't. Aftershock is a "trip" to a festival she drives home
     /// from every night: 4 days, not 3 nights.
     var overnight: Bool?
+    /// Optional local start time on `departDate` ("19:00:00"). Decode-only here;
+    /// saved via TripsStore.saveStartTime so a plain trip upsert never clears it
+    /// (and builds from before 2026-09-14, which don't know it, leave it alone).
+    var startTime: String?
 
     // MARK: Derived
+
+    /// The moment the plan starts: `departDate` at `startTime`, or the start of
+    /// that day when no time is set. Nil for a someday plan.
+    var startMoment: Date? {
+        departDate.map { TimeOfDay.moment(on: $0, time: startTime) }
+    }
 
     var isSomeday: Bool { departDate == nil }
 
@@ -190,6 +200,7 @@ struct Trip: Codable, Identifiable, Hashable {
         case coverFocusX = "cover_focus_x"
         case coverFocusY = "cover_focus_y"
         case weatherCache = "weather_cache"
+        case startTime = "start_time"
     }
 
     init(id: UUID = UUID(), familyID: UUID, name: String, kind: PlanKind = .trip,
@@ -232,6 +243,7 @@ struct Trip: Codable, Identifiable, Hashable {
         coverFocusX   = try c.decodeIfPresent(Double.self, forKey: .coverFocusX) ?? 0.5
         coverFocusY   = try c.decodeIfPresent(Double.self, forKey: .coverFocusY) ?? 0.5
         weatherCache  = try c.decodeIfPresent(WeatherCache.self, forKey: .weatherCache)
+        startTime     = try c.decodeIfPresent(String.self, forKey: .startTime)
     }
 
     /// Encodes only the writable columns (for upsert). Timestamps and created_by

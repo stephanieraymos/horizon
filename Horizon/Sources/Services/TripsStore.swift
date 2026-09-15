@@ -318,12 +318,24 @@ final class TripsStore {
     }
 
     /// Persists the framing focal point for a trip's cover photo.
-    func saveCoverFocus(tripID: UUID, x: Double, y: Double) async {
+    @discardableResult
+    func saveCoverFocus(tripID: UUID, x: Double, y: Double) async -> Bool {
         struct P: Encodable { let cover_focus_x: Double; let cover_focus_y: Double }
-        do {
-            try await supabase.from("fam_trips").update(P(cover_focus_x: x, cover_focus_y: y)).eq("id", value: tripID).execute()
+        struct Row: Decodable { let id: UUID }
+        #if DEBUG
+        if DemoMode.isActive {
             if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverFocusX = x; trips[i].coverFocusY = y }
-        } catch { errorMessage = error.localizedDescription }
+            return true
+        }
+        #endif
+        do {
+            // Ask for the row back: an RLS-refused UPDATE is a silent 204.
+            let rows: [Row] = try await supabase.from("fam_trips").update(P(cover_focus_x: x, cover_focus_y: y))
+                .eq("id", value: tripID).select("id").execute().value
+            guard !rows.isEmpty else { errorMessage = "Only a family admin can change this plan."; return false }
+            if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].coverFocusX = x; trips[i].coverFocusY = y }
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     /// Sets or clears a plan's start time ("HH:mm:ss") on its own, so the plain

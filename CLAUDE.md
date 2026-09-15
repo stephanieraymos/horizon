@@ -170,7 +170,12 @@ Same shape as `fam_trips`' (double, NOT NULL, default 0.5). Decode-only on
 `FamilyEvent`; written only by `EventsStore.saveCoverFocus`, and `saveCover` resets
 both to 0.5 with every new (or removed) photo. `CoverCropView` is host-agnostic:
 `init(cover:focus:title:bannerAspect:onSave:)` — the plan banner and the countdown
-detail each pass their photo, focus, measured shape and save closure. The countdown
+detail each pass their photo, focus, measured shape and save closure. `onSave`
+returns Bool: on false the sheet STAYS OPEN with its own alert (an alert raised on
+the host while the sheet is closing can be dropped). Both saves (`TripsStore.
+saveCoverFocus`, `EventsStore.saveCoverFocus`) ask for the row back to catch an
+RLS refusal. The detail's photo uses the card's `@ScaledMetric` height and the
+list's 760 pt readable width, so it is the card's shape at any text size / on iPad. The countdown
 detail's photo preview is deliberately the small card's height (148) so Reframe
 previews the card's framing; the large "Next up" card (196) frames slightly
 differently, since focus is a fraction of the spare area, not a point.

@@ -15,7 +15,9 @@ struct CoverCropView: View {
     var title = "Adjust Cover"
     /// Width ÷ height of the banner being framed, measured where it's drawn.
     var bannerAspect: CGFloat = 393.0 / 170.0
-    let onSave: (UnitPoint) async -> Void
+    /// Returns false when the save failed; the sheet then stays open and says so
+    /// (an alert raised on the host while this sheet is closing can be dropped).
+    let onSave: (UnitPoint) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
 
@@ -25,9 +27,11 @@ struct CoverCropView: View {
     /// start location, so a gesture the system cancelled (no onEnded) can't
     /// leave a stale base that makes the next drag jump.
     @State private var dragAnchor: (start: CGPoint, focus: UnitPoint)?
+    @State private var isSaving = false
+    @State private var saveFailed = false
 
     init(cover: String?, focus: UnitPoint, title: String = "Adjust Cover",
-         bannerAspect: CGFloat? = nil, onSave: @escaping (UnitPoint) async -> Void) {
+         bannerAspect: CGFloat? = nil, onSave: @escaping (UnitPoint) async -> Bool) {
         self.cover = cover
         self.title = title
         self.onSave = onSave
@@ -86,14 +90,25 @@ struct CoverCropView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let f = focus
-                        Task { await onSave(f); dismiss() }
+                        isSaving = true
+                        Task {
+                            let ok = await onSave(f)
+                            isSaving = false
+                            if ok { dismiss() } else { saveFailed = true }
+                        }
                     }
+                    .disabled(isSaving)
                 }
             }
             // A vertical drag on the photo must reframe it, never pull the sheet
             // down (a UIKit pan that highPriorityGesture doesn't outrank) — and a
             // stray swipe shouldn't throw the adjustment away. Cancel/Save exist.
             .interactiveDismissDisabled()
+            .alert("Couldn't save the framing", isPresented: $saveFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Check your connection and try again. Only a family admin can change it.")
+            }
             .task(id: cover) {
                 guard let cover = cover?.nilIfBlank,
                       let img = await HorizonImageLoader.loadCover(cover) else { return }

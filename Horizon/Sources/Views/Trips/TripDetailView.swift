@@ -27,6 +27,7 @@ struct TripDetailView: View {
     @State private var showCapture = false
     @State private var bannerAspect: CGFloat?
     @State private var editingStartTime = false
+    @State private var saveError: String?
 
     init(trip: Trip) {
         self.trip = trip
@@ -167,9 +168,23 @@ struct TripDetailView: View {
         .sheet(isPresented: $showCoverCrop) { CoverCropView(trip: current, bannerAspect: bannerAspect) }
         .sheet(isPresented: $editingStartTime) {
             TimeOfDaySheet(title: "Start time", current: current.startTime) { t in
-                Task { await trips.saveStartTime(tripID: current.id, time: t) }
+                let plan = current
+                Task {
+                    if await trips.saveStartTime(tripID: plan.id, time: t) {
+                        // Keep the hidden calendar copy's time in step.
+                        await events.syncCountdown(forTripID: plan.id, familyID: plan.familyID,
+                                                   name: plan.name, departDate: plan.departDate,
+                                                   startTime: t, createdBy: family.currentMember?.userID)
+                    } else {
+                        saveError = trips.errorMessage ?? "Couldn't save the start time. Check your connection."
+                    }
+                }
             }
         }
+        .alert("Couldn't save", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
         .sheet(isPresented: $showPasteReservation) {
             PasteReservationSheet(familyID: current.familyID, tripID: current.id, onReview: { parsed in
                 // Let the paste sheet finish dismissing before presenting the editor.
@@ -205,6 +220,7 @@ struct TripDetailView: View {
         // Rebuild the countdown for a dated trip.
         await events.syncCountdown(forTripID: current.id, familyID: current.familyID,
                                    name: current.name, departDate: current.departDate,
+startTime: current.startTime,
                                    createdBy: family.currentMember?.userID)
     }
 

@@ -329,7 +329,8 @@ final class TripsStore {
     /// Sets or clears a plan's start time ("HH:mm:ss") on its own, so the plain
     /// trip upsert — which doesn't carry it — never clears it. Nil writes an
     /// explicit JSON null.
-    func saveStartTime(tripID: UUID, time: String?) async {
+    @discardableResult
+    func saveStartTime(tripID: UUID, time: String?) async -> Bool {
         let value = time?.nilIfBlank
         struct P: Encodable {
             let start_time: String?
@@ -341,13 +342,22 @@ final class TripsStore {
         #if DEBUG
         if DemoMode.isActive {
             if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].startTime = value }
-            return
+            return true
         }
         #endif
         do {
-            try await supabase.from("fam_trips").update(P(start_time: value)).eq("id", value: tripID).execute()
+            // A filtered-out UPDATE (not a family admin) is a silent 204; ask for
+            // the row back so a refusal isn't shown as saved.
+            struct Row: Decodable { let id: UUID }
+            let rows: [Row] = try await supabase.from("fam_trips").update(P(start_time: value))
+                .eq("id", value: tripID).select("id").execute().value
+            guard !rows.isEmpty else {
+                errorMessage = "Only a family admin can change this plan."
+                return false
+            }
             if let i = trips.firstIndex(where: { $0.id == tripID }) { trips[i].startTime = value }
-        } catch { errorMessage = error.localizedDescription }
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     /// Writes the cached forecast onto the trip row.

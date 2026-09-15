@@ -71,6 +71,14 @@ enum HorizonImageLoader {
     static func cachedStorageImage(path: String) async -> UIImage? {
         guard let key = NSURL(string: "trip-docs:///\(path)") else { return nil }
         if let mem = memory.object(forKey: key) { return mem }
+        // Several views asking for the same cover at once (the banner, Adjust
+        // Cover's preview and its own measuring load) share ONE signed URL and
+        // ONE download instead of each paying egress for it.
+        return await InFlightLoads.shared.load(path) { await fetchStorageImage(path: path, key: key) }
+    }
+
+    private static func fetchStorageImage(path: String, key: NSURL) async -> UIImage? {
+        if let mem = memory.object(forKey: key) { return mem }
         let file = diskURL(forPath: path)
         if let data = try? Data(contentsOf: file), let ui = UIImage(data: data) {
             memory.setObject(ui, forKey: key)
@@ -84,6 +92,21 @@ enum HorizonImageLoader {
             try? data.write(to: file, options: .atomic)
             return ui
         } catch { return nil }
+    }
+}
+
+/// Joins concurrent loads of the same storage path onto one task.
+private actor InFlightLoads {
+    static let shared = InFlightLoads()
+    private var tasks: [String: Task<UIImage?, Never>] = [:]
+
+    func load(_ path: String, _ work: @escaping @Sendable () async -> UIImage?) async -> UIImage? {
+        if let running = tasks[path] { return await running.value }
+        let task = Task { await work() }
+        tasks[path] = task
+        let image = await task.value
+        tasks[path] = nil
+        return image
     }
 }
 
@@ -103,6 +126,13 @@ struct AdjustableCoverImage<Placeholder: View>: View {
                 Image(uiImage: image).resizable()
                     .frame(width: l.size.width, height: l.size.height)
                     .offset(x: l.offset.x, y: l.offset.y)
+                    // `layout` measures its offset from a CENTRED image, but a
+                    // GeometryReader pins its child top-leading — so every cover
+                    // was half its overflow off: focus 0.5 showed the top edge,
+                    // anything below 0.5 opened a blank gap, and the bottom of the
+                    // photo was unreachable (found 2026-09-14, dated from July).
+                    // A frame the size of the reader centres the oversized image.
+                    .frame(width: geo.size.width, height: geo.size.height)
             } else {
                 placeholder()
             }

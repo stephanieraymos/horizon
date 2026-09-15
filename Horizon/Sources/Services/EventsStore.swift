@@ -65,7 +65,9 @@ final class EventsStore {
         title: String,
         eventType: String?,
         eventDate: Date,
-        eventTime: String? = nil,
+        // No default on purpose: event_time is always written, so a caller that
+        // forgot it would silently clear the countdown's time.
+        eventTime: String?,
         isAnnual: Bool,
         description: String?,
         emoji: String?,
@@ -88,9 +90,10 @@ final class EventsStore {
             let created_by: UUID?
 
             // Synthesized Encodable drops nil optionals, and PostgREST leaves an
-            // omitted column untouched — so turning the time off in the editor
-            // never cleared it. event_time is always written; the rest keep the
-            // omit-when-nil behaviour they've always had.
+            // omitted column untouched — so clearing the note, the emoji, the
+            // people or the time in the editor never cleared anything. Every
+            // editable column is always written (null clears it); only id and
+            // created_by keep omit-when-nil, so the database fills them.
             enum CodingKeys: String, CodingKey {
                 case id, family_id, title, event_type, event_date, event_time, is_annual
                 case description, emoji, members, trip_id, created_by
@@ -104,9 +107,9 @@ final class EventsStore {
                 try c.encode(event_date, forKey: .event_date)
                 try c.encode(event_time, forKey: .event_time)
                 try c.encode(is_annual, forKey: .is_annual)
-                try c.encodeIfPresent(description, forKey: .description)
-                try c.encodeIfPresent(emoji, forKey: .emoji)
-                try c.encodeIfPresent(members, forKey: .members)
+                try c.encode(description, forKey: .description)
+                try c.encode(emoji, forKey: .emoji)
+                try c.encode(members, forKey: .members)
                 try c.encodeIfPresent(trip_id, forKey: .trip_id)
                 try c.encodeIfPresent(created_by, forKey: .created_by)
             }
@@ -219,7 +222,15 @@ final class EventsStore {
         }
         #endif
         do {
-            try await supabase.from("fam_events").update(body).eq("id", value: eventID).execute()
+            // RLS lets only family admins write fam_events, and a filtered-out
+            // UPDATE is a silent 204 — so ask for the row back and treat "no row"
+            // as a refusal instead of a save that vanishes on the next reload.
+            let rows: [PatchedRow] = try await supabase.from("fam_events").update(body)
+                .eq("id", value: eventID).select("id").execute().value
+            guard !rows.isEmpty else {
+                self.error = "Only a family admin can change this countdown."
+                return false
+            }
             if let i = events.firstIndex(where: { $0.id == eventID }) { apply(&events[i]) }
             return true
         } catch {
@@ -267,7 +278,7 @@ final class EventsStore {
     /// the linked event's id if one exists/was created.
     @discardableResult
     func syncCountdown(forTripID tripID: UUID, familyID: UUID, name: String,
-                       departDate: Date?, createdBy: UUID?) async -> UUID? {
+                       departDate: Date?, startTime: String?, createdBy: UUID?) async -> UUID? {
         guard let departDate else { return nil }
 
         // Every row linked to the plan (query in case events aren't loaded).
@@ -303,7 +314,9 @@ final class EventsStore {
             title: name,
             eventType: FamilyEventType.vacation.rawValue,
             eventDate: departDate,
-            eventTime: copy?.eventTime,
+            // The plan's start time rides along, so Solstice's calendar (which
+            // reads these copies) shows a 7 PM dinner at 7 PM, not all day.
+            eventTime: startTime,
             isAnnual: false,
             description: copy?.description,
             emoji: copy?.emoji ?? "✈️",
@@ -350,3 +363,7 @@ private struct TripLinkPatch: Encodable {
         try c.encode(trip_id, forKey: .trip_id)
     }
 }
+
+/// The id a `.select("id")` returns after a single-column patch — empty means
+/// RLS filtered the row out and nothing was written.
+private struct PatchedRow: Decodable { let id: UUID }

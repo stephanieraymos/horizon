@@ -174,7 +174,8 @@ enum CountdownBuilder {
 
         return out.sorted { a, b in
             if a.isHappeningNow != b.isHappeningNow { return a.isHappeningNow }
-            if a.date != b.date { return a.date < b.date }
+            // The exact moment, so an 8 AM breakfast sorts above a 6 PM dinner.
+            if a.moment != b.moment { return a.moment < b.moment }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
     }

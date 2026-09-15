@@ -87,9 +87,15 @@ enum NotificationManager {
         for item in countdowns where item.trip == nil && item.daysAway >= 0 && item.daysAway <= 60 {
             let day = cal.startOfDay(for: item.date)
             let title = "\(item.emoji ?? "⏳") \(item.title)"
-            if let at9 = cal.date(bySettingHour: 9, minute: 0, second: 0, of: day), at9 > now {
-                schedule(id: "cd-\(item.id)-0", title: title,
-                         body: item.detail.map { "\($0) — today" } ?? "It's today", at: at9)
+            if let at9 = cal.date(bySettingHour: 9, minute: 0, second: 0, of: day) {
+                // With an exact time, never remind after it: a 7:30 AM race gets
+                // its nudge at 6:30, not at 9.
+                let fireAt = item.time == nil ? at9 : min(at9, item.moment.addingTimeInterval(-3600))
+                let when = TimeOfDay.label(item.time).map { "today at \($0)" } ?? "today"
+                if fireAt > now {
+                    schedule(id: "cd-\(item.id)-0", title: title,
+                             body: item.detail.map { "\($0) — \(when)" } ?? "It's \(when)", at: fireAt)
+                }
             }
             let type = item.event?.eventType
             guard type == FamilyEventType.birthday.rawValue || type == FamilyEventType.anniversary.rawValue,

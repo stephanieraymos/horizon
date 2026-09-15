@@ -34,10 +34,16 @@ enum TimeOfDay {
         return cal.date(from: c) ?? cal.startOfDay(for: day)
     }
 
-    /// A picker seed: today at the stored time, or 7 PM when there isn't one.
+    /// A day with no clock change anywhere, so a stored 02:30 never becomes
+    /// 03:30 just because the editor was opened on a spring-forward day.
+    private static let referenceDay: Date =
+        Calendar.current.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: 12)) ?? Date()
+
+    /// A picker seed: the stored time (or 7 PM) on the reference day — only the
+    /// hour and minute are ever read back.
     static func pickerDate(_ raw: String?) -> Date {
         let cal = Calendar.current
-        var c = cal.dateComponents([.year, .month, .day], from: Date())
+        var c = cal.dateComponents([.year, .month, .day], from: referenceDay)
         let t = components(raw)
         c.hour = t?.hour ?? 19
         c.minute = t?.minute ?? 0
@@ -47,6 +53,6 @@ enum TimeOfDay {
     /// "7:30 PM" in the viewer's locale.
     static func label(_ raw: String?) -> String? {
         guard components(raw) != nil else { return nil }
-        return moment(on: Date(), time: raw).formatted(date: .omitted, time: .shortened)
+        return moment(on: referenceDay, time: raw).formatted(date: .omitted, time: .shortened)
     }
 }

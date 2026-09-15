@@ -86,6 +86,7 @@ struct EventsBoardView: View {
         await trips.setArchived(trip, false)
         await events.syncCountdown(forTripID: trip.id, familyID: trip.familyID,
                                    name: trip.name, departDate: trip.departDate,
+startTime: trip.startTime,
                                    createdBy: family.currentMember?.userID)
     }
 

@@ -207,6 +207,7 @@ struct TripEditView: View {
         // A dated trip automatically gets (and keeps in sync) a linked countdown.
         await events.syncCountdown(forTripID: draft.id, familyID: draft.familyID,
                                    name: draft.name, departDate: draft.departDate,
+startTime: newStart,
                                    createdBy: family.currentMember?.userID)
         dismiss()
     }

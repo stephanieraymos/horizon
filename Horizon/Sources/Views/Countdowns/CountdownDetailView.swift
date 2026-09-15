@@ -26,6 +26,7 @@ struct CountdownDetailView: View {
     @State private var confirmDelete = false
     @State private var photoItem: PhotosPickerItem?
     @State private var photoError: String?
+    @State private var saveError: String?
 
     /// Always the store's freshest copy, so a time or note saved here shows at once.
     private var current: FamilyEvent {
@@ -132,12 +133,22 @@ struct CountdownDetailView: View {
         }
         .sheet(isPresented: $editingTime) {
             TimeOfDaySheet(title: "Time", current: current.eventTime) { t in
-                Task { await events.saveTime(eventID: current.id, time: t) }
+                let id = current.id
+                Task {
+                    if !(await events.saveTime(eventID: id, time: t)) {
+                        saveError = events.error ?? "Couldn't save the time. Check your connection."
+                    }
+                }
             }
         }
         .sheet(isPresented: $editingNote) {
             CountdownNoteSheet(title: "Note", current: current.description) { n in
-                Task { await events.saveNote(eventID: current.id, note: n) }
+                let id = current.id
+                Task {
+                    if !(await events.saveNote(eventID: id, note: n)) {
+                        saveError = events.error ?? "Couldn't save the note. Check your connection."
+                    }
+                }
             }
         }
         .sheet(item: $editingCountdown) { EventEditView(existing: $0) }
@@ -153,7 +164,12 @@ struct CountdownDetailView: View {
             }
         }
         .onChange(of: photoItem) { _, item in
-            guard let item, let familyID = family.familyID else { return }
+            guard let item else { return }
+            guard let familyID = family.familyID else {
+                photoItem = nil
+                photoError = "Your family hasn't loaded yet — try again in a moment."
+                return
+            }
             Task {
                 guard let jpeg = await item.loadUploadJPEG() else {
                     photoError = "Couldn't read that photo. If it's stored in iCloud, open it in Photos once, then try again."
@@ -168,6 +184,10 @@ struct CountdownDetailView: View {
             get: { photoError != nil }, set: { if !$0 { photoError = nil } })) {
             Button("OK", role: .cancel) { photoError = nil }
         } message: { Text(photoError ?? "") }
+        .alert("Couldn't save", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
         // Deleted from the editor sheet: nothing left to show.
         .onChange(of: events.events.contains { $0.id == event.id }) { _, stillThere in
             if !stillThere && !isFromPeople { dismiss() }

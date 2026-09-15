@@ -18,9 +18,10 @@ struct CoverCropView: View {
 
     @State private var focus: UnitPoint
     @State private var imageSize: CGSize?
-    /// Focus when the finger went down. @State rather than @GestureState: a
-    /// GestureState read inside onChanged can still be the previous value.
-    @State private var dragStart: UnitPoint?
+    /// Where this drag began and the focus at that moment. Keyed by the touch's
+    /// start location, so a gesture the system cancelled (no onEnded) can't
+    /// leave a stale base that makes the next drag jump.
+    @State private var dragAnchor: (start: CGPoint, focus: UnitPoint)?
 
     init(trip: Trip, bannerAspect: CGFloat? = nil) {
         self.trip = trip
@@ -49,15 +50,17 @@ struct CoverCropView: View {
                     .highPriorityGesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                let base = dragStart ?? focus
-                                if dragStart == nil { dragStart = focus }
+                                if dragAnchor == nil || dragAnchor?.start != value.startLocation {
+                                    dragAnchor = (value.startLocation, focus)
+                                }
+                                let base = dragAnchor?.focus ?? focus
                                 // Dragging the photo right reveals more of its left edge.
                                 let dx = overflow.width  > 0 ? Double(value.translation.width  / overflow.width)  : 0
                                 let dy = overflow.height > 0 ? Double(value.translation.height / overflow.height) : 0
                                 focus = UnitPoint(x: min(max(base.x - dx, 0), 1),
                                                   y: min(max(base.y - dy, 0), 1))
                             }
-                            .onEnded { _ in dragStart = nil }
+                            .onEnded { _ in dragAnchor = nil }
                     )
                 }
                 .aspectRatio(bannerAspect, contentMode: .fit)
@@ -80,6 +83,10 @@ struct CoverCropView: View {
                     }
                 }
             }
+            // A vertical drag on the photo must reframe it, never pull the sheet
+            // down (a UIKit pan that highPriorityGesture doesn't outrank) — and a
+            // stray swipe shouldn't throw the adjustment away. Cancel/Save exist.
+            .interactiveDismissDisabled()
             .task(id: trip.coverPhotoURL) {
                 guard let cover = trip.coverPhotoURL?.nilIfBlank,
                       let img = await HorizonImageLoader.loadCover(cover) else { return }

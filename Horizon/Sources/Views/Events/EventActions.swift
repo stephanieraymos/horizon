@@ -80,6 +80,7 @@ struct EventActions: ViewModifier {
             // trip its own countdown instead.
             await events.syncCountdown(forTripID: trip.id, familyID: familyID,
                                        name: trip.name, departDate: date,
+startTime: trip.startTime,
                                        createdBy: family.currentMember?.userID)
         } else {
             await events.linkTrip(event, tripID: trip.id)

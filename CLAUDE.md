@@ -142,3 +142,24 @@ the NavigationLink hidden behind the card — a link label draws a chevron. Coun
 cards keep ONE contextMenu + swipe (the measured-safe pairing). Countdown photos
 live in `fam_events.cover_photo_url` as storage paths (`covers/event-…`); The Glade
 decodes the column but draws nothing from it.
+
+## `AdjustableCoverImage`: the image must be CENTRED before the offset (2026-09-14)
+
+`layout` returns an offset measured from a centred, oversized image. A
+`GeometryReader` pins its child top-leading, so from July until 2026-09-14 every
+cover was drawn half its overflow off: focus 0.5 showed the TOP edge, focus < 0.5
+opened a blank gap, the bottom of the photo was unreachable. Nobody saw it because
+the default showed a plausible top crop. The fix is the trailing
+`.frame(width: geo.size.width, height: geo.size.height)`, which centres it. A
+`fam_trips` focus saved before the fix was chosen against the pinned rendering.
+
+`HorizonImageLoader.cachedStorageImage` joins concurrent loads of one path
+(`InFlightLoads`): the banner, Adjust Cover's preview and its measuring load used
+to each mint a signed URL and download the same photo. Adjust Cover is
+`.interactiveDismissDisabled()` so a vertical drag reframes rather than pulls the
+sheet (a UIKit pan that `highPriorityGesture` does not outrank).
+
+Single-column patches (`EventsStore.patch`, `TripsStore.saveStartTime`) ask for the
+row back with `.select("id")`: fam_events/fam_trips writes are admin-only by RLS and
+a filtered-out UPDATE is a silent 204, which read as "saved" for the child account.
+`syncCountdown` takes `startTime:` so the plan copy Solstice reads carries the time.

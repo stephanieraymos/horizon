@@ -93,6 +93,13 @@ kept showing exactly what it did. Show a plan's length only through
 `trip` with `overnight = false`. `encode` always writes the key, so switching back
 clears it; older builds that don't send it leave the column untouched on upsert.
 
+## Never put a `PhotosPicker` inside a `Menu`
+
+Choosing it dismisses the menu, and the menu takes the picker's presentation with it:
+the row closes the menu and nothing opens. Trip Resources' "Photo / image" shipped
+like that (reported 2026-09-18). In a menu, use a plain `Button` that sets a flag, and
+present with `.photosPicker(isPresented:selection:matching:)` on the enclosing view.
+
 ## Cover banner: never layer a Button over a PhotosPicker
 
 Reframe used to float over a full-banner `PhotosPicker`, and on her phone taps

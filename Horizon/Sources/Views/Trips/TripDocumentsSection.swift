@@ -8,6 +8,7 @@ struct TripDocumentsSection: View {
     @Environment(FamilyStore.self) private var family
 
     @State private var photoItem: PhotosPickerItem?
+    @State private var showPhotoPicker = false
     @State private var showFileImporter = false
     @State private var viewing: TripDocument?
     @State private var uploading = false
@@ -23,7 +24,10 @@ struct TripDocumentsSection: View {
                 Spacer()
                 Menu {
                     Button("Add link", systemImage: "link") { addingLink = true }
-                    PhotosPicker("Photo / image", selection: $photoItem, matching: .images)
+                    // A plain Button, never a `PhotosPicker`, inside a Menu: choosing the
+                    // picker dismissed the menu and took the picker's presentation with
+                    // it, so "Photo / image" closed the menu and did nothing (2026-09-18).
+                    Button("Photo / image", systemImage: "photo") { showPhotoPicker = true }
                     Button("File (PDF…)", systemImage: "doc") { showFileImporter = true }
                 } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                     .tint(Theme.Colors.brand)
@@ -49,6 +53,7 @@ struct TripDocumentsSection: View {
                 }
             }
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in Task { await handlePhoto(item) } }
         .fileImporter(isPresented: $showFileImporter,
                       allowedContentTypes: [.pdf, .image, .plainText, .item],

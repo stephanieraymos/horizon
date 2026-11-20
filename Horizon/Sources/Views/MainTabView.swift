@@ -63,24 +63,62 @@ enum HorizonTabOrder {
 }
 
 struct MainTabView: View {
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var prefs = ShellPrefsStore(client: supabase, appKey: "horizon",
                                                normalizeOrder: HorizonTabOrder.normalize)
+    /// The selected tab, owned here so it survives a shell swap (fold/unfold, Split
+    /// View resize): both shells read and write it.
+    @State private var selectedTab: String = HorizonTab.home.rawValue
+    /// Settings is a sidebar-only row; it sits beside, not inside, `selectedTab`
+    /// so the tab bar never receives an id it does not know.
+    @State private var showsSettings = false
 
-    var body: some View {
-        AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs) { tab in
-            root(for: tab)
-        }
+    /// Any window that is regular in BOTH directions gets the sidebar shell (iPad,
+    /// Mac, and the iPhone Duo's inner display, which is a PHONE idiom at
+    /// regular x regular). Everything else is the AppShellKit tab bar. Size classes
+    /// only, never idiom or UIScreen: AppShellKit forces the phone tab bar for any
+    /// phone-idiom device (a Duo `UITabBarItem` crash workaround), so a wide phone
+    /// would otherwise get one stretched column. The sidebar shell is a
+    /// `NavigationSplitView`, not a `TabView`, so it avoids those crashes; the fold
+    /// itself is UNVERIFIED (needs a real Duo). Mirrors Canopy's `usesSidebar`.
+    private var usesSidebar: Bool {
+        hSizeClass == .regular && vSizeClass == .regular
     }
 
-    @ViewBuilder
-    private func root(for tab: HorizonTab) -> some View {
+    private var tabSelection: Binding<String> {
+        Binding(get: { selectedTab },
+                set: {
+                    guard HorizonTab(rawValue: $0) != nil else { return }
+                    selectedTab = $0
+                    showsSettings = false
+                })
+    }
+
+    var body: some View {
+        if usesSidebar {
+            HorizonSidebarShell(selectedTab: tabSelection, showsSettings: $showsSettings)
+        } else {
+            AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs,
+                     selection: tabSelection) { tab in
+                HorizonTabRoot(tab: tab)
+            }
+        }
+    }
+}
+
+/// One tab's root view, shared by the tab bar and the sidebar shell.
+struct HorizonTabRoot: View {
+    let tab: HorizonTab
+
+    var body: some View {
         switch tab {
         case .home:       HomeView()
         case .countdowns: CountdownsView()
         case .events:     EventsBoardView()
-        case .dates:   DatesView()
-        case .someday: SomedayView()
-        case .people:  PeopleView()
+        case .dates:      DatesView()
+        case .someday:    SomedayView()
+        case .people:     PeopleView()
         }
     }
 }
@@ -104,6 +142,9 @@ struct PlaceholderTab: View {
 
 /// Settings — presented as a sheet from Home (no longer a tab).
 struct SettingsView: View {
+    /// True when shown as the sidebar shell's detail rather than a sheet: there is
+    /// nothing to dismiss, so no Done button.
+    var embedded = false
     @Environment(AuthStore.self) private var authStore
     @Environment(FamilyStore.self) private var family
     @Environment(\.dismiss) private var dismiss
@@ -156,7 +197,9 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
             }
             .onChange(of: notificationsEnabled) { _, enabled in
                 if !enabled {

@@ -17,6 +17,11 @@ struct HomeView: View {
     @State private var openCountdown: CountdownRoute?
     @State private var showSettings = false
     @State private var showNotes = false
+    /// Width of the page itself (not the screen), so a narrow Split View window or
+    /// a sidebar-narrowed detail column stays single-column.
+    @State private var availableWidth: CGFloat = 0
+
+    private var isWide: Bool { availableWidth >= 700 }
 
 
     // AppShell owns the NavigationStack for this tab; this root is bare. Trip
@@ -28,14 +33,30 @@ struct HomeView: View {
                     if let trip = nextTrip {
                         nextTripCard(trip)
                     }
-                    if !dashboard.upcomingReservations.isEmpty {
-                        reservationsSection
-                    }
-                    if !weekDates.isEmpty {
-                        datesSection
-                    }
-                    if !comingUp.isEmpty {
-                        comingUpSection
+                    if isWide {
+                        // Wide windows (iPad, the Duo's inner display, a wide Mac
+                        // window): two columns instead of one stretched stack.
+                        HStack(alignment: .top, spacing: 22) {
+                            VStack(alignment: .leading, spacing: 22) {
+                                if !dashboard.upcomingReservations.isEmpty { reservationsSection }
+                                if !weekDates.isEmpty { datesSection }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                            VStack(alignment: .leading, spacing: 22) {
+                                if !comingUp.isEmpty { comingUpSection }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                        }
+                    } else {
+                        if !dashboard.upcomingReservations.isEmpty {
+                            reservationsSection
+                        }
+                        if !weekDates.isEmpty {
+                            datesSection
+                        }
+                        if !comingUp.isEmpty {
+                            comingUpSection
+                        }
                     }
                     if isEmpty {
                         ContentUnavailableView(
@@ -46,13 +67,12 @@ struct HomeView: View {
                     }
                 }
                 .padding()
-                // Readable width on iPad/regular: the dashboard is a column of
-                // cards, not a form, but letting it stretch to a 13" iPad's full
-                // width reads as an iPhone screen pulled wide rather than a
-                // restructured layout. Cap and center instead.
-                .frame(maxWidth: 672)
+                // Readable width: one column caps at 672 so the dashboard is not an
+                // iPhone screen pulled wide; two columns get a wider cap.
+                .frame(maxWidth: isWide ? 1100 : 672)
                 .frame(maxWidth: .infinity)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
             .navigationTitle(greeting)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

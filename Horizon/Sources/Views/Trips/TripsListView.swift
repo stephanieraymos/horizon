@@ -25,6 +25,7 @@ struct TripRow: View {
 struct TripRowLabel: View {
     let trip: Trip
     @Environment(TripsStore.self) private var trips
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
@@ -39,11 +40,21 @@ struct TripRowLabel: View {
                 if let subtitle = subtitle {
                     Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
-                Text(TripFormat.dateRange(trip.departDate, trip.returnDate))
+                // Chip rides the date line so the title keeps the full row width;
+                // at accessibility sizes it drops under the dates instead of clipping.
+                let dates = Text(TripFormat.dateRange(trip.departDate, trip.returnDate))
                     .font(.caption).foregroundStyle(.secondary)
+                if dynamicTypeSize.isAccessibilitySize {
+                    dates
+                    CountdownBadge(trip: trip)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        dates
+                        Spacer(minLength: 4)
+                        CountdownBadge(trip: trip)
+                    }
+                }
             }
-            Spacer()
-            CountdownBadge(trip: trip)
         }
         .padding(.vertical, 2)
     }
@@ -57,19 +68,22 @@ struct CountdownBadge: View {
     let trip: Trip
 
     var body: some View {
-        let text = trip.countdownText
+        let text = trip.shortCountdownText
         if !text.isEmpty {
             Text(text)
                 .font(.caption).fontWeight(.semibold)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(tint.opacity(0.15), in: Capsule())
                 .foregroundStyle(tint)
+                .accessibilityLabel(trip.countdownText)
         }
     }
 
     private var tint: Color {
         if trip.isSomeday { return .purple }
-        if trip.countdownText == "Now" { return .green }
+        if trip.shortCountdownText == "Now" { return .green }
         if trip.isPast { return .secondary }
         return Theme.Colors.brand
     }

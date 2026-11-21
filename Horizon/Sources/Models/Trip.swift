@@ -175,6 +175,21 @@ struct Trip: Codable, Identifiable, Hashable {
         return "in \(months) months"
     }
 
+    /// Compact countdown for narrow list chips ("6 mo", "3 wk", "12 d"). The
+    /// detail header keeps the long `countdownText`.
+    var shortCountdownText: String {
+        if isSomeday { return "Someday" }
+        guard let days = daysUntilDeparture else { return "" }
+        if let end = returnDate, days <= 0,
+           end >= Calendar.current.startOfDay(for: Date()) { return "Now" }
+        if days < 0 { return departDate.map { Self.yearFormatter.string(from: $0) } ?? "" }
+        if days == 0 { return "Today" }
+        if days == 1 { return "Tomorrow" }
+        if days >= 60 { return "\(days / 30) mo" }
+        if days >= 30 { return "\(days / 7) wk" }
+        return "\(days) d"
+    }
+
     static let yearFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy"; return f
     }()

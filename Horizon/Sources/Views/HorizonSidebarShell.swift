@@ -14,6 +14,11 @@ struct HorizonSidebarShell: View {
 
     private static let settingsID = "settings"
 
+    /// Plans nests its own NavigationSplitView (list beside plan), so while it is
+    /// selected the outer sidebar collapses to detail-only: two columns, not three.
+    /// The Show Sidebar button below keeps her from being stuck there.
+    @State private var columns: NavigationSplitViewVisibility = .all
+
     private var selection: Binding<String?> {
         Binding(get: { showsSettings ? Self.settingsID : selectedTab },
                 set: {
@@ -28,7 +33,7 @@ struct HorizonSidebarShell: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             List(selection: selection) {
                 Section {
                     ForEach(HorizonTab.allCases) { tab in
@@ -40,9 +45,25 @@ struct HorizonSidebarShell: View {
                 }
             }
             .navigationTitle("Horizon")
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
         } detail: {
             detail
                 .id(selection.wrappedValue)
+                .toolbar {
+                    if columns == .detailOnly {
+                        ToolbarItem(placement: .navigation) {
+                            Button {
+                                columns = .all
+                            } label: {
+                                Label("Show Sidebar", systemImage: "sidebar.left")
+                            }
+                            .keyboardShortcut("s", modifiers: [.control, .command])
+                        }
+                    }
+                }
+        }
+        .onChange(of: selection.wrappedValue, initial: true) { _, id in
+            columns = (!showsSettings && id == HorizonTab.events.rawValue) ? .detailOnly : .all
         }
     }
 

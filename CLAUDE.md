@@ -51,6 +51,14 @@ read off the payroll system. `WorkDaysStore.projections` replays it week by week
 accruing so a day taken mid-week frees room under the cap. Don't reimplement this
 as `anchor + rate × weeks − used`; that overstates the balance near the cap.
 
+## Which shell, and what a shell swap keeps/loses (2026-11-20)
+
+`MainTabView.usesSidebar` = `hSizeClass == .regular && vSizeClass == .regular` (size classes only, never idiom or UIScreen). That covers iPad, Mac and the iPhone Duo's inner display; everything else is the AppShellKit tab bar. AppShell forces the phone tab bar for any phone-idiom device (a Duo `UITabBarItem` crash workaround), so a wide phone would get one stretched column; Horizon therefore owns the regular x regular shell itself (`HorizonSidebarShell`, a `NavigationSplitView` over a `List`, never a `TabView`).
+- **Plans nests a second `NavigationSplitView`** (`EventsBoardView`, list beside plan). Inside the sidebar shell that is three columns, so the shell sets `columnVisibility` to `.detailOnly` while Plans is selected and `.all` otherwise, with a Show Sidebar toolbar button (ctrl-cmd-S) so she is never stuck.
+- **Survives a swap:** `selectedTab` (owned by `MainTabView`) and root-level sheets. **Lost:** in-tab sheets with unsaved edits, navigation paths, scroll position. The sidebar detail is `.id(selection)`, so every sidebar tap REMOUNTS the tab; anything in a `.task` must therefore be guarded (Home's dashboard load is TTL-guarded, its notification sync runs only when inputs change).
+- `showsSettings` is cleared when swapping to the tab bar; Home's toolbar hides its Settings item in the sidebar shell (the sidebar has a Settings row).
+- Sidebar rows use `HorizonTab.allCases`, not her saved tab order (`ShellPrefsStore` is only loaded by AppShell). Unverified on a real Duo.
+
 ## Split-view detail identity (2026-09-11)
 
 `TripDetailView` owns a whole `TripDetailStore` plus edit/reservation/cover-photo

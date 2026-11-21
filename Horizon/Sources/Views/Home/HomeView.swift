@@ -21,7 +21,48 @@ struct HomeView: View {
     /// a sidebar-narrowed detail column stays single-column.
     @State private var availableWidth: CGFloat = 0
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// True when the sidebar shell hosts Home: it has its own Settings row, so the
+    /// toolbar menu drops its Settings item.
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.verticalSizeClass) private var vSizeClass
+    private var inSidebarShell: Bool { hSizeClass == .regular && vSizeClass == .regular }
+
+    /// Two columns are for iPad / Mac widths only. The Duo's inner display (669pt)
+    /// minus the sidebar column lands well under this, so it stays single-column.
     private var isWide: Bool { availableWidth >= 700 }
+
+    private var hasLeft: Bool { !dashboard.upcomingReservations.isEmpty || !weekDates.isEmpty }
+    private var hasRight: Bool { !comingUp.isEmpty }
+    /// Only when both columns have something, and not at accessibility text sizes.
+    private var useTwoColumns: Bool {
+        isWide && hasLeft && hasRight && typeSize < .accessibility1
+    }
+
+    /// Last notification reschedule: `sync` wipes and re-adds every pending request,
+    /// so it runs only when its inputs changed or after a while, not per remount.
+    private static var lastNotificationSync: (key: String, at: Date)?
+
+    private var notificationKey: String {
+        [notificationsEnabled ? "1" : "0",
+         trips.upcoming.map { "\($0.id)" }.joined(separator: ","),
+         dashboard.upcomingReservations.map { "\($0.id)" }.joined(separator: ","),
+         dates.upcoming.map { "\($0.id)" }.joined(separator: ","),
+         allCountdowns.map { "\($0.id)" }.joined(separator: ",")].joined(separator: "|")
+    }
+
+    private func syncNotificationsIfNeeded() async {
+        let key = notificationKey
+        if let last = Self.lastNotificationSync, last.key == key,
+           Date().timeIntervalSince(last.at) < 3600 { return }
+        await NotificationManager.sync(trips: trips.upcoming,
+                                       reservations: dashboard.upcomingReservations,
+                                       dates: dates.upcoming,
+                                       countdowns: allCountdowns,
+                                       enabled: notificationsEnabled)
+        // Stamped after the await so a cancelled or failed sync is retried.
+        Self.lastNotificationSync = (key, Date())
+    }
 
 
     // AppShell owns the NavigationStack for this tab; this root is bare. Trip
@@ -33,9 +74,9 @@ struct HomeView: View {
                     if let trip = nextTrip {
                         nextTripCard(trip)
                     }
-                    if isWide {
-                        // Wide windows (iPad, the Duo's inner display, a wide Mac
-                        // window): two columns instead of one stretched stack.
+                    if useTwoColumns {
+                        // iPad / wide Mac windows: two columns instead of one
+                        // stretched stack.
                         HStack(alignment: .top, spacing: 22) {
                             VStack(alignment: .leading, spacing: 22) {
                                 if !dashboard.upcomingReservations.isEmpty { reservationsSection }
@@ -69,7 +110,7 @@ struct HomeView: View {
                 .padding()
                 // Readable width: one column caps at 672 so the dashboard is not an
                 // iPhone screen pulled wide; two columns get a wider cap.
-                .frame(maxWidth: isWide ? 1100 : 672)
+                .frame(maxWidth: useTwoColumns ? 1100 : 672)
                 .frame(maxWidth: .infinity)
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
@@ -78,7 +119,9 @@ struct HomeView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button { showNotes = true } label: { Label("Notes", systemImage: "note.text") }
-                        Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                        if !inSidebarShell {
+                            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                        }
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -95,12 +138,8 @@ struct HomeView: View {
             if dates.dates.isEmpty { await dates.load() }
             if events.events.isEmpty { await events.load() }
             if family.members.isEmpty { await family.load() }
-            await dashboard.load()
-            await NotificationManager.sync(trips: trips.upcoming,
-                                           reservations: dashboard.upcomingReservations,
-                                           dates: dates.upcoming,
-                                           countdowns: allCountdowns,
-                                           enabled: notificationsEnabled)
+            await dashboard.loadIfStale()
+            await syncNotificationsIfNeeded()
         }
         .refreshable {
             await trips.load(); await dates.load(); await events.load(); await dashboard.load()

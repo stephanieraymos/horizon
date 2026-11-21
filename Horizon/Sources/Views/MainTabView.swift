@@ -96,13 +96,20 @@ struct MainTabView: View {
     }
 
     var body: some View {
-        if usesSidebar {
-            HorizonSidebarShell(selectedTab: tabSelection, showsSettings: $showsSettings)
-        } else {
-            AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs,
-                     selection: tabSelection) { tab in
-                HorizonTabRoot(tab: tab)
+        Group {
+            if usesSidebar {
+                HorizonSidebarShell(selectedTab: tabSelection, showsSettings: $showsSettings)
+            } else {
+                AppShell(tabs: HorizonTab.allCases, maxPrimary: 4, prefs: prefs,
+                         selection: tabSelection) { tab in
+                    HorizonTabRoot(tab: tab)
+                }
             }
+        }
+        // Settings is a sidebar-only row; unfolding back to the tab bar must not
+        // leave it selected for the next time the sidebar shell appears.
+        .onChange(of: usesSidebar) { _, now in
+            if !now { showsSettings = false }
         }
     }
 }
